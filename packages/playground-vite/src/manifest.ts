@@ -4,6 +4,24 @@ import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
 
+/**
+ * 契约提取的进程内缓存。
+ *
+ * 真实项目里每次保存都全量重跑 `createChecker` + 逐组件 `getComponentMeta` 太慢
+ * （实测 406 个组件一次 7.2s）。这里做两层缓存：
+ * 1. checker 按 tsconfig 复用 —— 省掉重复建 TS Program 的开销；
+ * 2. 组件 meta 按 文件 mtime+size 缓存 —— 没改动的组件直接复用。
+ *
+ * 代价：跨文件的类型变化（改了被引用的 .ts）不会自动失效，需要重启 dev 或改动该组件本身。
+ */
+let checkerCache: { tsconfigPath: string; checker: { getComponentMeta: (file: string) => unknown } } | null = null
+const metaCache = new Map<string, { key: string; meta: unknown }>()
+
+const clearManifestCache = (): void => {
+  checkerCache = null
+  metaCache.clear()
+}
+
 /** Vue 自带的透传 props，不属于组件自身契约 */
 const BUILTIN_PROPS = new Set([
   'key',
@@ -108,7 +126,30 @@ export const buildManifest = (input: ManifestInput): Manifest => {
   const tsconfigPath = path.isAbsolute(input.tsconfig)
     ? input.tsconfig
     : path.join(input.root, input.tsconfig)
-  const checker = createChecker(tsconfigPath)
+
+  // tsconfig 换了要整体失效；否则复用同一个 checker（建 TS Program 是主要开销）
+  if (checkerCache && checkerCache.tsconfigPath !== tsconfigPath) clearManifestCache()
+  if (!checkerCache) {
+    checkerCache = { tsconfigPath, checker: createChecker(tsconfigPath) as never }
+  }
+  const checker = checkerCache.checker as ReturnType<typeof createChecker>
+
+  /** 按 mtime+size 命中缓存，只对改动过的组件重跑提取 */
+  const readMeta = (rel: string): ReturnType<typeof checker.getComponentMeta> => {
+    const abs = path.join(input.root, rel)
+    let key = 'missing'
+    try {
+      const stat = fs.statSync(abs)
+      key = `${stat.mtimeMs}:${stat.size}`
+    } catch {
+      key = `missing:${Date.now()}`
+    }
+    const hit = metaCache.get(rel)
+    if (hit && hit.key === key) return hit.meta as ReturnType<typeof checker.getComponentMeta>
+    const fresh = checker.getComponentMeta(abs)
+    metaCache.set(rel, { key, meta: fresh })
+    return fresh
+  }
 
   const sceneTexts = new Map<string, string>()
   for (const scene of input.scenes) {
@@ -120,7 +161,7 @@ export const buildManifest = (input: ManifestInput): Manifest => {
   }
 
   const components: ManifestComponent[] = findComponentFiles(input.root, input.patterns).map((rel) => {
-    const meta = checker.getComponentMeta(path.join(input.root, rel))
+    const meta = readMeta(rel)
 
     const props: ManifestProp[] = meta.props
       .filter((prop) => isOwnProp(prop.name))

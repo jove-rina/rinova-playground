@@ -213,6 +213,7 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
   const generateManifest = (): void => {
     const patterns = config.components
     if (!Array.isArray(patterns) || !patterns.length || !scenes.length) return
+    const startedAt = Date.now()
     try {
       const manifest = buildManifest({
         root,
@@ -224,7 +225,7 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
       const props = manifest.components.reduce((sum, item) => sum + item.props.length, 0)
       const uncovered = manifest.components.reduce((sum, item) => sum + item.uncoveredProps.length, 0)
       console.log(
-        `[rinova-playground] 契约清单：${manifest.components.length} 个组件 / ${props} props / 未覆盖 ${uncovered} → .playground/`
+        `[rinova-playground] 契约清单：${manifest.components.length} 个组件 / ${props} props / 未覆盖 ${uncovered} → .playground/（${Date.now() - startedAt}ms）`
       )
     } catch (error) {
       console.warn(
@@ -347,34 +348,56 @@ ${entries}
       const refresh = (file?: string): void => {
         const target = file ?? ''
         const isScene = target.startsWith(scenesDir) && target.endsWith('.vue')
-        const isConfig = Boolean(configFile) && path.resolve(target) === path.resolve(configFile)
-        if (!isScene && !isConfig) return
+        if (!isScene) return
         invalidateScenes(server)
         server.ws.send({ type: 'full-reload' })
       }
 
       // 组件改动时重算契约清单（防抖，避免每次保存都跑一遍 TS 程序）
-      if (Array.isArray(config.components) && config.components.length) {
-        const roots = new Set(
-          config.components.map((pattern) => path.resolve(root, pattern.split('*')[0] ?? '.'))
-        )
-        for (const dir of roots) server.watcher.add(dir)
-        let timer: NodeJS.Timeout | null = null
-        const scheduleManifest = (file: string): void => {
-          if (!file.endsWith('.vue')) return
-          if (![...roots].some((dir) => file.startsWith(dir))) return
-          if (timer) clearTimeout(timer)
-          timer = setTimeout(() => generateManifest(), 800)
-        }
-        server.watcher.on('change', scheduleManifest)
-        server.watcher.on('add', scheduleManifest)
-        server.watcher.on('unlink', scheduleManifest)
+      let manifestTimer: NodeJS.Timeout | null = null
+      const scheduleManifest = (delay = 800): void => {
+        if (manifestTimer) clearTimeout(manifestTimer)
+        manifestTimer = setTimeout(() => generateManifest(), delay)
       }
+
+      // components 变了要重挂监听：配置里新增的目录原来根本没被 watch。
+      // 注意这里只增不减 —— chokidar 的 unwatch 是异步的，紧跟着 add 会让这批路径进入坏状态
+      // （实测：unwatch 后再 add，新旧目录都不再触发事件）。多留几个失效目录无害，
+      // 最多多跑一次清单重算。
+      const componentRoots = new Set<string>()
+      const watchComponents = (): void => {
+        for (const pattern of Array.isArray(config.components) ? config.components : []) {
+          const dir = path.resolve(root, pattern.split('*')[0] || '.')
+          if (componentRoots.has(dir)) continue
+          componentRoots.add(dir)
+          server.watcher.add(dir)
+        }
+      }
+
+      const onComponentChange = (file: string): void => {
+        if (process.env.RINOVA_DEBUG_WATCH) console.log('[rp-debug] event:', file)
+        if (!file.endsWith('.vue')) return
+        const hit = [...componentRoots].some((dir) => file.startsWith(dir))
+        if (process.env.RINOVA_DEBUG_WATCH) console.log('[rp-debug]   vue=', true, 'hit=', hit)
+        if (!hit) return
+        scheduleManifest()
+      }
+
+      watchComponents()
+      server.watcher.on('change', onComponentChange)
+      server.watcher.on('add', onComponentChange)
+      server.watcher.on('unlink', onComponentChange)
 
       server.watcher.on('add', refresh)
       server.watcher.on('unlink', refresh)
-      server.watcher.on('change', (file) => {
-        if (configFile && path.resolve(file) === path.resolve(configFile)) refresh(file)
+      server.watcher.on('change', async (file) => {
+        if (!configFile || path.resolve(file) !== path.resolve(configFile)) return
+        // 配置文件变了：重读配置 → 重扫场景 → 按新的 components 重挂监听 → 重算契约清单
+        invalidateScenes(server)
+        await ensureReady()
+        watchComponents()
+        scheduleManifest(0)
+        server.ws.send({ type: 'full-reload' })
       })
     },
   }
