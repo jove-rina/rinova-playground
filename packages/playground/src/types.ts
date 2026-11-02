@@ -28,4 +28,6 @@ export interface SceneDescriptor {
   load: () => Promise<{ default: Component }>
   /** 懒加载场景源码（?raw） */
   raw: () => Promise<string>
+  /** 源码面板的文件列表：场景自身在前，sceneMeta.files 在后 */
+  sources: { rel: string; raw: () => Promise<string> }[]
 }

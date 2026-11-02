@@ -39,6 +39,7 @@ interface SceneMeta {
   tags?: string[]
   description?: string
   hideInNav?: boolean
+  files?: string[]
 }
 
 interface SceneEntry {
@@ -57,6 +58,8 @@ interface SceneEntry {
   description?: string
   /** sceneMeta.hideInNav：不进侧栏但可直接访问 */
   hidden?: boolean
+  /** 源码面板的文件列表（场景自身 + sceneMeta.files） */
+  sources: { rel: string; url: string }[]
 }
 
 interface PlaygroundUserConfig {
@@ -145,6 +148,7 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
         tags: Array.isArray(meta.tags) ? meta.tags.map(String) : undefined,
         description: typeof meta.description === 'string' ? meta.description : undefined,
         hideInNav: meta.hideInNav === true ? true : undefined,
+        files: Array.isArray(meta.files) ? meta.files.map(String) : undefined,
       }
     } catch (error) {
       console.warn(
@@ -178,6 +182,20 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
         tags: meta.tags,
         description: meta.description,
         hidden: meta.hideInNav,
+        sources: [
+          { rel: relPath, url: `/${relPath}` },
+          ...(meta.files ?? [])
+            .map((file) => {
+              const absExtra = path.resolve(root, file)
+              if (!fs.existsSync(absExtra)) {
+                console.warn(`[rinova-playground] ${relPath} 的 sceneMeta.files 里 ${file} 不存在，已跳过`)
+                return null
+              }
+              const relExtra = toPosix(path.relative(root, absExtra))
+              return { rel: relExtra, url: `/${relExtra}` }
+            })
+            .filter((entry): entry is { rel: string; url: string } => entry !== null),
+        ],
       })
     }
 
@@ -226,6 +244,13 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
     tags: ${JSON.stringify(scene.tags ?? null)},
     description: ${JSON.stringify(scene.description ?? null)},
     hidden: ${JSON.stringify(scene.hidden === true)},
+    sources: [${scene.sources
+      .map(
+        (source) => `{ rel: ${JSON.stringify(source.rel)}, raw: () => import(${JSON.stringify(
+          `${source.url}?raw`
+        )}).then((mod) => mod.default) }`
+      )
+      .join(', ')}],
     load: () => import(${JSON.stringify(scene.url)}),
     raw: () => import(${JSON.stringify(`${scene.url}?raw`)}).then((mod) => mod.default)
   }`

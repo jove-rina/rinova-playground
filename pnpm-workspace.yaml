@@ -10,3 +10,4 @@ minimumReleaseAgeExclude:
   - '@shikijs/themes@4.6.0'
   - '@shikijs/types@4.6.0'
   - shiki@4.6.0
+  - '@shikijs/monaco@4.6.0'

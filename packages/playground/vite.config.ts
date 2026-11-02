@@ -15,9 +15,10 @@ export default defineConfig({
         assetFileNames: (assetInfo) => (assetInfo.name?.endsWith('.css') ? 'style.css' : 'assets/[name][extname]'),
       },
     },
+    // lib 模式不支持为每个 chunk 单独引用 CSS，统一合成一个 style.css 供使用方一次引入
     cssCodeSplit: false,
     minify: false,
-    sourcemap: true,
+    sourcemap: false,
     emptyOutDir: true,
   },
 })

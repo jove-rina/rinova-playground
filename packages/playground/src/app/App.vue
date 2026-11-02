@@ -1,14 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
-import { Check, Copy, X } from '@lucide/vue'
 import config from 'virtual:playground/config'
 import { scenes } from 'virtual:playground/scenes'
-import PwButton from '../components/PwButton.vue'
 import PwToastHost from '../components/PwToastHost.vue'
-import { toast } from '../components/toast'
-import CodeBlock from '../code/CodeBlock.vue'
 import '../styles/theme.less'
 import PlaygroundSidebar from './PlaygroundSidebar.vue'
+import PlaygroundSourcePanel from './PlaygroundSourcePanel.vue'
 import PlaygroundStage from './PlaygroundStage.vue'
 import PlaygroundToolbar from './PlaygroundToolbar.vue'
 import type { SceneDescriptor } from '../types'
@@ -59,38 +56,6 @@ watchEffect(() => {
 const toggleTheme = () => {
   preference.value = theme.value === 'dark' ? 'light' : 'dark'
   localStorage.setItem(STORAGE_KEY, preference.value)
-}
-
-/* ---------------- 源码 ---------------- */
-
-const source = ref('')
-const sourceState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
-const copied = ref(false)
-
-watch(
-  [activeId, showCode],
-  async () => {
-    if (!showCode.value || !activeScene.value) return
-    sourceState.value = 'loading'
-    try {
-      source.value = await activeScene.value.raw()
-      sourceState.value = 'ready'
-    } catch {
-      sourceState.value = 'error'
-    }
-  },
-  { immediate: true }
-)
-
-const copySource = async () => {
-  try {
-    await navigator.clipboard.writeText(source.value)
-    copied.value = true
-    toast('已复制源码', 'success')
-    window.setTimeout(() => (copied.value = false), 1600)
-  } catch {
-    toast('复制失败，请手动选择', 'error')
-  }
 }
 
 /* ---------------- 路由（History API） ---------------- */
@@ -192,33 +157,9 @@ onBeforeUnmount(() => {
       <PlaygroundStage v-if="activeScene" :scene="activeScene" :width="width" />
       <div v-else class="pw-empty">没有找到任何场景，请在 scenes 目录下新建 .vue 文件。</div>
 
-      <section v-if="showCode && activeScene" class="pw-code-panel">
-        <header class="pw-code-panel__head">
-          <span class="pw-code-panel__file">{{ activeScene.rel }}</span>
-          <div class="pw-code-panel__actions">
-            <PwButton size="sm" variant="text" :title="copied ? '已复制' : '复制源码'" @click="copySource">
-              <template #icon>
-                <Check v-if="copied" :size="13" />
-                <Copy v-else :size="13" />
-              </template>
-            </PwButton>
-            <PwButton size="sm" variant="text" title="关闭（Esc）" @click="showCode = false">
-              <template #icon><X :size="13" /></template>
-            </PwButton>
-          </div>
-        </header>
-        <div class="pw-code-panel__body">
-          <CodeBlock
-            v-if="sourceState === 'ready'"
-            :code="source"
-            :lang="activeScene.lang"
-          />
-          <span v-else-if="sourceState === 'error'" class="pw-code-panel__hint">
-            源码读取失败：{{ activeScene.rel }}
-          </span>
-          <span v-else class="pw-code-panel__hint">读取源码中…</span>
-        </div>
-      </section>
+      <div v-if="showCode && activeScene" class="pw-source-slot">
+        <PlaygroundSourcePanel :scene="activeScene" :theme="theme" @close="showCode = false" />
+      </div>
     </main>
 
     <PwToastHost />
@@ -243,52 +184,11 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
-.pw-code-panel {
-  display: flex;
-  flex-direction: column;
-  height: 40%;
-  min-height: 180px;
+.pw-source-slot {
+  height: 42%;
+  min-height: 200px;
   border-top: 1px solid var(--rp-color-border);
   background: var(--rp-color-bg);
-}
-
-.pw-code-panel__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  height: 36px;
-  flex: 0 0 36px;
-  padding: 0 8px 0 16px;
-  border-bottom: 1px solid var(--rp-color-border);
-}
-
-.pw-code-panel__file {
-  font-family: var(--rp-font-mono);
-  font-size: 12px;
-  color: var(--rp-color-text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pw-code-panel__actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.pw-code-panel__body {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.pw-code-panel__hint {
-  display: block;
-  padding: 16px;
-  color: var(--rp-color-text-muted);
-  font-size: 12px;
 }
 
 .pw-empty {

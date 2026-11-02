@@ -21,7 +21,9 @@
   "dependencies": {
     "@lucide/vue": "1.66.0",
     "@shikijs/langs": "4.6.0",
+    "@shikijs/monaco": "4.6.0",
     "@shikijs/themes": "4.6.0",
+    "monaco-editor": "0.57.0",
     "shiki": "4.6.0"
   },
   "scripts": {
