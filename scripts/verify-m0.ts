@@ -37,11 +37,14 @@ const walk = (dir: string, filter: (file: string) => boolean, out: string[] = []
 
 const rel = (file: string): string => path.relative(root, file)
 
-/* 1. 不许出现 UI 组件库 */
+/* 1. 内核不许出现 UI 组件库（examples/ 是真实库接入示例，允许自带 UI 依赖） */
 const FORBIDDEN = ['element-plus', 'naive-ui', 'ant-design-vue', 'vuetify', 'tailwindcss', 'unocss']
-const manifests = walk(root, (file) => file.endsWith('package.json') && !file.includes('node_modules'))
+const manifestTargets = [
+  path.join(root, 'package.json'),
+  ...walk(path.join(root, 'packages'), (file) => file.endsWith('package.json') && !file.includes('node_modules')),
+]
 const offenders: string[] = []
-for (const file of manifests) {
+for (const file of manifestTargets) {
   const json = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, Record<string, string> | undefined>
   const deps = { ...json.dependencies, ...json.devDependencies, ...json.peerDependencies }
   for (const name of FORBIDDEN) {

@@ -33,6 +33,14 @@ pnpm verify     # 11 项验收
 pnpm verify:mcp # MCP server 冒烟（7 项）
 ```
 
+## 示例
+
+| 目录 | 作用 | 跑起来 |
+|---|---|---|
+| `examples/minimal-lib` | 最小接入，5 个场景 | `pnpm dev` → :5273 |
+| `examples/docs-site` | 文档站，用框架自己搭自己 | `pnpm dev:docs` → :5280 |
+| `examples/real-lib` | 真实组件库接入（shadcn-vue + Tailwind 4，11 个组件 / 19 props） | `pnpm --filter @rinova/example-real-lib dev` → :5281 |
+
 ## MCP
 
 `@rinova/playground-mcp` 把契约清单挂给 Claude Code / Cursor，提供 `capability_search`、`capability_get`、`scenario_list`、`coverage_report` 四个只读工具。仓库根的 `.mcp.json` 已配好，客户端打开本仓库即可直接用。
