@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, shallowRef, watch, type Component } from 'vue'
+import { computed, ref, shallowRef, watch, type Component } from 'vue'
+import { getPreviewOverride } from '../preview/override'
 import type { SceneDescriptor } from '../types'
 
 const props = defineProps<{
@@ -11,15 +12,19 @@ const comp = shallowRef<Component | null>(null)
 const error = ref('')
 let token = 0
 
+const override = computed(() => getPreviewOverride(props.scene.id))
+/** 组件 key 带上 override 版本，源码改动后强制重挂载 */
+const mountKey = computed(() => `${props.scene.id}:${override.value?.rev ?? 0}`)
+
 watch(
-  () => props.scene,
-  async (scene) => {
+  () => [props.scene, override.value?.rev, override.value?.src] as const,
+  async ([scene, , src]) => {
     const current = ++token
     comp.value = null
     error.value = ''
     try {
-      const mod = await scene.load()
-      if (current === token) comp.value = mod.default
+      const mod = src ? await import(/* @vite-ignore */ `${src}?rev=${current}`) : await scene.load()
+      if (current === token) comp.value = (mod as { default: Component }).default
     } catch (err) {
       if (current === token) error.value = err instanceof Error ? err.message : String(err)
     }
@@ -38,7 +43,7 @@ watch(
           <code>{{ scene.rel }}</code>
           <span>{{ error }}</span>
         </p>
-        <component :is="comp" v-else-if="comp" :key="scene.id" />
+        <component :is="comp" v-else-if="comp" :key="mountKey" />
         <span v-else class="pw-stage__loading">加载中…</span>
       </div>
     </div>
