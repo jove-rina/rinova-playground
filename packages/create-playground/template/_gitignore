@@ -2,6 +2,3 @@ node_modules/
 dist/
 .DS_Store
 *.log
-
-# rinova-playground 临时预览文件
-.*.preview.vue

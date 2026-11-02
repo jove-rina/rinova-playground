@@ -154,6 +154,3 @@ packages/*/dist
 # 编辑器本地配置
 .vscode/
 .DS_Store
-
-# rinova-playground 临时预览文件
-.*.preview.vue

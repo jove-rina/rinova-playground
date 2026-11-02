@@ -7,7 +7,6 @@ import { toast } from '../components/toast'
 import CodeBlock from '../code/CodeBlock.vue'
 import CodeEditor from '../code/CodeEditor.vue'
 import { langFromFile } from '../code/monaco'
-import { applyPreview, clearPreviewOverride } from '../preview/override'
 import type { SceneDescriptor } from '../types'
 
 const props = defineProps<{
@@ -24,29 +23,7 @@ const loading = ref(true)
 const failed = ref(false)
 const editing = ref(false)
 const copied = ref(false)
-const liveHint = ref('')
 const cache = new Map<string, string>()
-let syncTimer: number | null = null
-
-/** 编辑态下把代码推给 dev server 编译，成功后预览区自动重挂载 */
-const schedulePreview = (): void => {
-  if (syncTimer !== null) window.clearTimeout(syncTimer)
-  syncTimer = window.setTimeout(async () => {
-    if (!editing.value || text.value === original.value) return
-    try {
-      await applyPreview(props.scene.id, text.value)
-      liveHint.value = '预览已更新'
-    } catch {
-      liveHint.value = '实时预览不可用（需要 dev server）'
-    } finally {
-      window.setTimeout(() => (liveHint.value = ''), 1600)
-    }
-  }, 700)
-}
-
-watch(text, () => {
-  if (editing.value) schedulePreview()
-})
 
 const viewer = config.codeViewer ?? 'monaco'
 
@@ -94,15 +71,11 @@ const select = (index: number): void => {
 
 const toggleEdit = (): void => {
   editing.value = !editing.value
-  if (!editing.value) {
-    text.value = original.value
-    clearPreviewOverride(props.scene.id)
-  }
+  if (!editing.value) text.value = original.value
 }
 
 const reset = (): void => {
   text.value = original.value
-  clearPreviewOverride(props.scene.id)
   toast('已还原为原始源码', 'info')
 }
 
@@ -134,7 +107,6 @@ const copy = async (): Promise<void> => {
           {{ fileName(source.rel) }}
         </button>
         <span v-if="dirty" class="pw-source__dirty">已修改</span>
-        <span v-if="liveHint" class="pw-source__live">{{ liveHint }}</span>
       </div>
 
       <div class="pw-source__actions">
@@ -243,13 +215,6 @@ const copy = async (): Promise<void> => {
   margin-left: 4px;
   color: var(--rp-color-warning);
   font-size: 11px;
-}
-
-.pw-source__live {
-  margin-left: 6px;
-  color: var(--rp-color-success);
-  font-size: 11px;
-  white-space: nowrap;
 }
 
 .pw-source__actions {

@@ -6,8 +6,6 @@ import type { Plugin, ViteDevServer } from 'vite'
 
 const VIRTUAL_CONFIG = 'virtual:playground/config'
 const VIRTUAL_SCENES = 'virtual:playground/scenes'
-/** 编辑态实时预览：把改动写到缓存目录（不动用户源码），再交回 Vite/plugin-vue 编译 */
-const PREVIEW_ENDPOINT = '/__pw/preview'
 
 const RESOLVED_ID: Record<string, string> = {
   [VIRTUAL_CONFIG]: `\0${VIRTUAL_CONFIG}`,
@@ -114,10 +112,6 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
   let scenesDir = ''
   let scenes: SceneEntry[] = []
   let configFile = ''
-  /** 场景 id → 编辑器里的最新代码 */
-  const previewCodes = new Map<string, string>()
-  /** 写出的临时预览文件，进程退出 / 服务关闭时清掉 */
-  const previewFiles = new Set<string>()
 
   const jiti = createJiti(import.meta.url, { interopDefault: true, moduleCache: false })
 
@@ -286,10 +280,7 @@ ${entries}
       root = viteConfig.root
     },
 
-    resolveId: (id) => {
-      if (id === VIRTUAL_CONFIG || id === VIRTUAL_SCENES) return RESOLVED_ID[id]
-      return null
-    },
+    resolveId: (id) => (id === VIRTUAL_CONFIG || id === VIRTUAL_SCENES ? RESOLVED_ID[id] : null),
 
     load: async (id) => {
       if (id !== RESOLVED_ID[VIRTUAL_CONFIG] && id !== RESOLVED_ID[VIRTUAL_SCENES]) return null
@@ -301,44 +292,6 @@ ${entries}
       await ensureReady()
       server.watcher.add(scenesDir)
 
-      // 接收编辑器里的代码：存内存 + 失效模块，客户端再带新 ?t= 重新 import
-      server.middlewares.use(PREVIEW_ENDPOINT, (req, res) => {
-        if (req.method !== 'POST') {
-          res.statusCode = 405
-          res.end('Method Not Allowed')
-          return
-        }
-
-        const chunks: Buffer[] = []
-        req.on('data', (chunk: Buffer) => chunks.push(chunk))
-        req.on('end', () => {
-          try {
-            const { id, code } = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
-              id: string
-              code: string
-            }
-            if (!id || typeof code !== 'string') throw new Error('id 与 code 必填')
-            previewCodes.set(id, code)
-            const scene = scenes.find((entry) => entry.id === id)
-            if (!scene) throw new Error(`未知场景：${id}`)
-            // 写在原文件旁边（点号开头，扫描时跳过），这样 ../../lib 这类相对导入语义不变
-            const target = path.join(
-              path.dirname(scene.file),
-              `.${path.basename(scene.file, '.vue')}.preview.vue`
-            )
-            fs.writeFileSync(target, code, 'utf8')
-            previewFiles.add(target)
-            const mod = server.moduleGraph.getModuleById(target)
-            if (mod) server.moduleGraph.invalidateModule(mod)
-            res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify({ ok: true, src: `/@fs${toPosix(target)}` }))
-          } catch (error) {
-            res.statusCode = 400
-            res.end(String(error instanceof Error ? error.message : error))
-          }
-        })
-      })
-
       const refresh = (file?: string): void => {
         const target = file ?? ''
         const isScene = target.startsWith(scenesDir) && target.endsWith('.vue')
@@ -347,19 +300,6 @@ ${entries}
         invalidateScenes(server)
         server.ws.send({ type: 'full-reload' })
       }
-
-      const cleanup = (): void => {
-        for (const file of previewFiles) {
-          try {
-            fs.rmSync(file, { force: true })
-          } catch {
-            /* 忽略清理失败 */
-          }
-        }
-        previewFiles.clear()
-      }
-      server.httpServer?.on('close', cleanup)
-      process.once('exit', cleanup)
 
       server.watcher.on('add', refresh)
       server.watcher.on('unlink', refresh)
