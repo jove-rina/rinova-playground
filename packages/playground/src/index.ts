@@ -8,10 +8,10 @@ export { defineSceneMeta } from './scene-meta'
 export type { SceneMeta } from './scene-meta'
 export type { SceneDescriptor } from './types'
 export { toast } from './components/toast'
-export { useSceneArgs, currentArgs } from './payload/args'
-export type { SceneArgs, SceneArgsOptions } from './payload/args'
-export { useSceneOutput, currentOutput } from './payload/output'
-export type { SceneSnapshot } from './payload/output'
+export { useSceneArgs, currentArgs, currentArgsSlots } from './payload/args'
+export type { SceneArgs, SceneArgsOptions, SceneArgsBinding } from './payload/args'
+export { useSceneOutput, currentOutput, currentOutputSlots } from './payload/output'
+export type { SceneSnapshot, SceneOutputBinding } from './payload/output'
 
 export interface CreatePlaygroundOptions {
   /** 挂载点，默认 `#app` */

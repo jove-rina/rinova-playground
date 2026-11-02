@@ -16,6 +16,10 @@ defineEmits<{ select: [id: string] }>()
 const query = ref('')
 const inputRef = ref<InstanceType<typeof PwInput> | null>(null)
 
+/** 分组头点击聚焦该组的合成落地页；没有落地页时返回 null */
+const groupIndexId = (group: { items: SceneDescriptor[] }): string | null =>
+  group.items.find((item) => item.kind === 'group-index')?.id ?? null
+
 const focusSearch = () => {
   inputRef.value?.focus()
 }
@@ -56,7 +60,18 @@ const filteredGroups = computed(() => {
 
     <nav class="pw-sidebar__nav">
       <section v-for="group in filteredGroups" :key="group.name" class="pw-nav-group">
-        <div class="pw-nav-group__title">{{ group.name }}</div>
+        <div class="pw-nav-group__title">
+          <button
+            v-if="groupIndexId(group)"
+            type="button"
+            class="pw-nav-group__title-btn"
+            :class="{ 'is-active': groupIndexId(group) === activeId }"
+            @click="$emit('select', groupIndexId(group) as string)"
+          >
+            {{ group.name }}
+          </button>
+          <template v-else>{{ group.name }}</template>
+        </div>
         <button
           v-for="item in group.items"
           :key="item.id"
@@ -153,6 +168,25 @@ const filteredGroups = computed(() => {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.pw-nav-group__title-btn {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--rp-color-text);
+  }
+
+  &.is-active {
+    color: var(--rp-color-primary);
+  }
 }
 
 .pw-nav-item {

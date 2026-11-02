@@ -4,6 +4,11 @@ import type { Component } from 'vue'
 export interface SceneDescriptor {
   /** 场景 id，等于相对 scenes 根目录的路径（不含扩展名），如 `button/basic` */
   id: string
+  /**
+   * 条目类型：普通场景 / 由框架合成的分组落地页（`groupIndex: true` 时每个分组自动有一个）。
+   * 落地页没有源文件，`load` / `raw` 不会被调用。
+   */
+  kind?: 'scene' | 'group-index'
   /** 侧栏显示的标题，默认由文件名推导 */
   title: string
   /** 一级分组名，等于场景所在目录名（按目录首字母大写化） */

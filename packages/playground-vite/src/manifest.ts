@@ -153,6 +153,11 @@ export const buildManifest = (input: ManifestInput): Manifest => {
 
   const sceneTexts = new Map<string, string>()
   for (const scene of input.scenes) {
+    // 合成条目（分组落地页）没有源文件，rel 为空，不能去 read
+    if (!scene.rel) {
+      sceneTexts.set(scene.id, '')
+      continue
+    }
     const abs = path.join(input.root, scene.rel)
     sceneTexts.set(
       scene.id,

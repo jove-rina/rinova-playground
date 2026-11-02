@@ -7,6 +7,7 @@ import { currentArgs } from '../payload/args'
 import { currentOutput } from '../payload/output'
 import '../styles/theme.less'
 import PlaygroundParamsPanel from './PlaygroundParamsPanel.vue'
+import PlaygroundGroupIndex from './PlaygroundGroupIndex.vue'
 import PlaygroundSidebar from './PlaygroundSidebar.vue'
 import PlaygroundSourcePanel from './PlaygroundSourcePanel.vue'
 import PlaygroundStage from './PlaygroundStage.vue'
@@ -15,6 +16,13 @@ import type { SceneDescriptor } from '../types'
 
 const STORAGE_KEY = 'rinova-playground:ui-theme'
 const title = config.title ?? 'Playground'
+
+/** config.groups 的声明顺序即侧栏分组顺序；未声明的组排到后面 */
+const groupLabelOrder = Object.values(config.groups ?? {})
+const groupRank = (name: string): number => {
+  const index = groupLabelOrder.indexOf(name)
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index
+}
 
 const groups = computed(() => {
   const map = new Map<string, SceneDescriptor[]>()
@@ -28,14 +36,35 @@ const groups = computed(() => {
     .map(([name, items]) => ({
       name,
       items,
-      weight: items.reduce((min, item) => Math.min(min, item.order), Number.MAX_SAFE_INTEGER),
+      // 合成落地页的 order 是 MIN_SAFE_INTEGER，不参与分组权重，否则所有组并列
+      weight: items
+        .filter((item) => item.kind !== 'group-index')
+        .reduce((min, item) => Math.min(min, item.order), Number.MAX_SAFE_INTEGER),
     }))
-    .sort((a, b) => a.weight - b.weight || a.name.localeCompare(b.name))
+    // config.groups 的声明顺序优先；未声明的组按权重 + 名称排
+    .sort(
+      (a, b) =>
+        groupRank(a.name) - groupRank(b.name) ||
+        a.weight - b.weight ||
+        a.name.localeCompare(b.name)
+    )
 })
 
-const visibleCount = computed(() => scenes.filter((scene) => !scene.hidden).length)
+const visibleCount = computed(
+  () => scenes.filter((scene) => !scene.hidden && scene.kind !== 'group-index').length
+)
 const activeId = ref(scenes.find((scene) => !scene.hidden)?.id ?? scenes[0]?.id ?? '')
 const activeScene = computed(() => scenes.find((scene) => scene.id === activeId.value) ?? scenes[0])
+
+/** 当前是分组落地页时，列出该组的普通场景（不含其它合成页） */
+const groupSceneItems = computed(() => {
+  const scene = activeScene.value
+  if (!scene || scene.kind !== 'group-index') return []
+  return scenes.filter(
+    (item) => item.group === scene.group && item.kind !== 'group-index' && !item.hidden
+  )
+})
+const isGroupIndex = computed(() => activeScene.value?.kind === 'group-index')
 
 const showCode = ref(false)
 const showPayload = ref(false)
@@ -173,12 +202,18 @@ onBeforeUnmount(() => {
       />
 
       <div class="pw-body">
-        <PlaygroundStage v-if="activeScene" :scene="activeScene" :width="width" />
+        <PlaygroundGroupIndex
+          v-if="isGroupIndex && activeScene"
+          :group="activeScene.group"
+          :items="groupSceneItems"
+          @select="activeId = $event"
+        />
+        <PlaygroundStage v-else-if="activeScene" :scene="activeScene" :width="width" />
         <div v-else class="pw-empty">没有找到任何场景，请在 scenes 目录下新建 .vue 文件。</div>
         <PlaygroundParamsPanel v-if="showPayload && hasPayload" :theme="theme" />
       </div>
 
-      <div v-if="showCode && activeScene" class="pw-source-slot">
+      <div v-if="showCode && activeScene && !isGroupIndex" class="pw-source-slot">
         <PlaygroundSourcePanel :scene="activeScene" :theme="theme" @close="showCode = false" />
       </div>
     </main>

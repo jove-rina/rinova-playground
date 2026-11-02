@@ -89,6 +89,8 @@ const size = ref<'sm' | 'md' | 'lg'>('lg')
 | `port` | Vite 默认（5173） | dev server 端口 |
 | `components` | — | 契约清单要扫的组件 glob；不配则不生成 `.playground/manifest.json` |
 | `tsconfig` | 项目根 `tsconfig.json` | 组件契约提取用的 tsconfig |
+| `groups` | — | 分组（`scenes` 下一级目录名）→ 侧栏显示名，**声明顺序即侧栏顺序**：`{ 'tao-common': 'Tao 通用组件' }` |
+| `groupIndex` | `false` | 为每个分组自动合成一个「概览」落地页，点分组标题即可进入 |
 
 ## 场景内 API
 
@@ -131,6 +133,21 @@ useSceneOutput(() => ({ size: args.size, clicked: count.value }))
 
 面板以 400ms 轮询这个 getter，把返回值显示在出参区。
 
+### 一个场景多个 demo —— 参数槽位
+
+同一场景里放多个 demo 时，各自调用一次并在选项里写 `slot`，面板会按槽位名分块，
+互不干扰（改一块的入参只影响那一个 demo）：
+
+```ts
+const primary = useSceneArgs({ label: '主按钮', size: 'md' }, { slot: '主按钮' })
+const ghost = useSceneArgs({ label: '次按钮', size: 'sm' }, { slot: '次按钮' })
+
+useSceneOutput(() => ({ clicked: primaryCount.value }), '主按钮')
+useSceneOutput(() => ({ clicked: ghostCount.value }), '次按钮')
+```
+
+槽位按代码里声明的顺序排列；只有一块时不显示槽位标题。
+
 ### toast
 
 ```ts
@@ -142,6 +159,7 @@ toast('保存失败', 'error')     // 'info' | 'success' | 'warning' | 'error'
 
 ## 样式约定
 
+- 只需引入一次 `@rinova/playground/style.css`（外壳样式）。**编辑器界面样式由包内按需加载**：打开代码面板时才会去拉 `@rinova/playground/editor.css`（≈125 KB gzip），不用手动引入；配 `codeViewer: 'shiki'` 的项目则永远不加载它。
 - 场景写 `<style scoped lang="less">`（使用方需要装 `less`）。**v0.1 没有 DOM 隔离**，非 scoped 样式会污染外壳。
 - 不要硬编码颜色，用外壳暴露的 12 个变量，明暗主题自动切换：
 

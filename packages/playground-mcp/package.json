@@ -1,6 +1,6 @@
 {
   "name": "@rinova/playground-mcp",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "rinova-playground 的 MCP server：把契约清单暴露给 AI 编码工具",
   "type": "module",
   "license": "MIT",

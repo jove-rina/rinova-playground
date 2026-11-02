@@ -21,12 +21,16 @@ const resolveShikiToMonaco = (mod: unknown): ShikiInject => {
 
 export const loadMonaco = (): Promise<typeof Monaco> => {
   loader ??= (async () => {
+    // 编辑器界面样式单独发布成 `@rinova/playground/editor.css`：
+    // 在这里动态 import，使用方的打包器会把它拆成懒加载 CSS —— 打开代码面板才下载，
+    // `codeViewer: 'shiki'` 的项目永远碰不到 loadMonaco，也就不付这份体积。
     const [editorWorker, tsWorker, monaco, _contribution, shikiModule] = await Promise.all([
       import('monaco-editor/editor/editor.worker?worker'),
       import('monaco-editor/language/typescript/ts.worker?worker'),
       import('monaco-editor/editor/editor.api'),
       import('monaco-editor/language/typescript/monaco.contribution'),
       import('@shikijs/monaco'),
+      import('@rinova/playground/editor.css'),
     ])
 
     // 只保留 editor + ts 两个 worker：展示场景不需要 json/css/html 的语义能力

@@ -5,18 +5,26 @@ import PwButton from '../components/PwButton.vue'
 import PwInput from '../components/PwInput.vue'
 import PwSwitch from '../components/PwSwitch.vue'
 import CodeBlock from '../code/CodeBlock.vue'
-import { currentArgs, type SceneArgs } from '../payload/args'
-import { currentOutput, type SceneSnapshot } from '../payload/output'
+import {
+  currentArgsSlots,
+  type SceneArgs,
+  type SceneArgsBinding,
+} from '../payload/args'
+import { currentOutputSlots, type SceneOutputBinding } from '../payload/output'
 
 defineProps<{ theme: 'light' | 'dark' }>()
 
 const tab = ref<'args' | 'output'>('args')
-const snapshot = ref<SceneSnapshot | null>(null)
-const error = ref('')
+const snapshots = ref<Array<{ label: string; text: string }>>([])
 let timer: number | null = null
 
-const hasArgs = computed(() => currentArgs.value !== null)
-const hasOutput = computed(() => typeof currentOutput.value === 'function')
+const argsSlots = computed(() => currentArgsSlots.value)
+const outputSlots = computed(() => currentOutputSlots.value)
+
+const hasArgs = computed(() => argsSlots.value.length > 0)
+const hasOutput = computed(() => outputSlots.value.length > 0)
+/** 多槽位（一个场景多个 demo）时，每块都加小标题 */
+const multiSlot = computed(() => argsSlots.value.length > 1 || outputSlots.value.length > 1)
 
 const activeTab = computed<'args' | 'output'>(() => {
   if (tab.value === 'args' && hasArgs.value) return 'args'
@@ -24,64 +32,60 @@ const activeTab = computed<'args' | 'output'>(() => {
   return hasArgs.value ? 'args' : 'output'
 })
 
+interface Field {
+  key: string
+  value: unknown
+  label: string
+  kind: 'boolean' | 'number' | 'string'
+  options?: Array<string | number>
+}
+
 /** 表单字段：按值的类型决定控件 */
-const fields = computed(() => {
-  const binding = currentArgs.value
-  if (!binding) return []
-  return Object.entries(binding.values).map(([key, value]) => ({
+const fieldsOf = (binding: SceneArgsBinding): Field[] =>
+  Object.entries(binding.values).map(([key, value]) => ({
     key,
     value,
     label: binding.options.labels?.[key] ?? key,
     kind: typeof value === 'boolean' ? 'boolean' : typeof value === 'number' ? 'number' : 'string',
     options: binding.options.options?.[key],
   }))
-})
 
-const setValue = (key: string, value: unknown): void => {
-  const binding = currentArgs.value
-  if (!binding) return
+const setValue = (binding: SceneArgsBinding, key: string, value: unknown): void => {
   ;(binding.values as SceneArgs)[key] = value
 }
 
-const setString = (key: string, raw: string): void => setValue(key, raw)
-const setNumber = (key: string, raw: string): void => {
+const setString = (binding: SceneArgsBinding, key: string, raw: string): void =>
+  setValue(binding, key, raw)
+const setNumber = (binding: SceneArgsBinding, key: string, raw: string): void => {
   const parsed = Number(raw)
-  setValue(key, Number.isFinite(parsed) ? parsed : 0)
+  setValue(binding, key, Number.isFinite(parsed) ? parsed : 0)
 }
 
-const resetArgs = (): void => {
-  const binding = currentArgs.value
-  if (!binding) return
+const resetSlot = (binding: SceneArgsBinding): void => {
   for (const [key, value] of Object.entries(binding.defaults)) {
     ;(binding.values as SceneArgs)[key] = value
   }
 }
-
-const readOutput = (): void => {
-  const getter = currentOutput.value
-  if (!getter) {
-    snapshot.value = null
-    error.value = ''
-    return
-  }
-  try {
-    snapshot.value = getter()
-    error.value = ''
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err)
-    snapshot.value = null
-  }
+const resetAll = (): void => {
+  argsSlots.value.forEach(resetSlot)
 }
 
-const outputText = computed(() => {
-  if (error.value) return error.value
-  if (!snapshot.value) return '（无数据）'
-  try {
-    return JSON.stringify(snapshot.value, null, 2)
-  } catch {
-    return String(snapshot.value)
-  }
-})
+const readOutput = (): void => {
+  snapshots.value = outputSlots.value.map((binding: SceneOutputBinding) => {
+    try {
+      const value = binding.getter()
+      return {
+        label: binding.label || binding.key,
+        text: JSON.stringify(value, null, 2) ?? String(value),
+      }
+    } catch (err) {
+      return {
+        label: binding.label || binding.key,
+        text: err instanceof Error ? err.message : String(err),
+      }
+    }
+  })
+}
 
 const startPolling = (): void => {
   readOutput()
@@ -120,49 +124,71 @@ onBeforeUnmount(() => {
         出参
       </button>
       <span class="pw-params__spacer" />
-      <PwButton v-if="activeTab === 'args' && hasArgs" size="sm" variant="text" title="恢复默认值" @click="resetArgs">
+      <PwButton v-if="activeTab === 'args' && hasArgs" size="sm" variant="text" title="恢复默认值" @click="resetAll">
         <template #icon><RotateCcw :size="13" /></template>
       </PwButton>
     </header>
 
     <div class="pw-params__body">
-      <div v-if="activeTab === 'args'" class="pw-form">
-        <div v-for="field in fields" :key="field.key" class="pw-form__row">
-          <label class="pw-form__label" :title="field.key">{{ field.label }}</label>
+      <div v-if="activeTab === 'args'" class="pw-params__slots">
+        <section v-for="slot in argsSlots" :key="`${slot.key}:${slot.label}`" class="pw-slot">
+          <header v-if="multiSlot" class="pw-slot__head">
+            <span class="pw-slot__name">{{ slot.label || slot.key }}</span>
+            <PwButton size="sm" variant="text" title="只恢复这一块" @click="resetSlot(slot)">
+              <template #icon><RotateCcw :size="12" /></template>
+            </PwButton>
+          </header>
+          <div class="pw-form">
+            <div v-for="field in fieldsOf(slot)" :key="field.key" class="pw-form__row">
+              <label class="pw-form__label" :title="field.key">{{ field.label }}</label>
 
-          <PwSwitch
-            v-if="field.kind === 'boolean'"
-            :model-value="field.value === true"
-            @update:model-value="setValue(field.key, $event)"
-          />
+              <PwSwitch
+                v-if="field.kind === 'boolean'"
+                :model-value="field.value === true"
+                @update:model-value="setValue(slot, field.key, $event)"
+              />
 
-          <select
-            v-else-if="field.options"
-            class="pw-form__select"
-            :value="String(field.value)"
-            @change="setString(field.key, ($event.target as HTMLSelectElement).value)"
-          >
-            <option v-for="option in field.options" :key="String(option)" :value="String(option)">
-              {{ option }}
-            </option>
-          </select>
+              <select
+                v-else-if="field.options"
+                class="pw-form__select"
+                :value="String(field.value)"
+                @change="setString(slot, field.key, ($event.target as HTMLSelectElement).value)"
+              >
+                <option v-for="option in field.options" :key="String(option)" :value="String(option)">
+                  {{ option }}
+                </option>
+              </select>
 
-          <PwInput
-            v-else
-            size="sm"
-            :type="field.kind === 'number' ? 'number' : 'text'"
-            :model-value="String(field.value ?? '')"
-            @update:model-value="
-              field.kind === 'number' ? setNumber(field.key, $event) : setString(field.key, $event)
-            "
-          />
-        </div>
+              <PwInput
+                v-else
+                size="sm"
+                :type="field.kind === 'number' ? 'number' : 'text'"
+                :model-value="String(field.value ?? '')"
+                @update:model-value="
+                  field.kind === 'number'
+                    ? setNumber(slot, field.key, $event)
+                    : setString(slot, field.key, $event)
+                "
+              />
+            </div>
 
-        <p v-if="!fields.length" class="pw-params__hint">该场景没有声明入参</p>
+            <p v-if="!fieldsOf(slot).length" class="pw-params__hint">这一块没有声明入参</p>
+          </div>
+        </section>
+
+        <p v-if="!argsSlots.length" class="pw-params__hint pw-params__hint--empty">
+          该场景没有声明入参
+        </p>
       </div>
 
-      <div v-else class="pw-params__output">
-        <CodeBlock :code="outputText" lang="json" />
+      <div v-else class="pw-params__slots">
+        <section v-for="item in snapshots" :key="item.label" class="pw-slot pw-slot--output">
+          <header v-if="multiSlot" class="pw-slot__head">
+            <span class="pw-slot__name">{{ item.label }}</span>
+          </header>
+          <CodeBlock :code="item.text" lang="json" />
+        </section>
+        <p v-if="!snapshots.length" class="pw-params__hint pw-params__hint--empty">（无数据）</p>
       </div>
     </div>
   </aside>
@@ -232,6 +258,42 @@ onBeforeUnmount(() => {
   overflow: auto;
 }
 
+.pw-params__slots {
+  display: flex;
+  flex-direction: column;
+}
+
+.pw-slot {
+  border-bottom: 1px solid var(--rp-color-border);
+
+  &:last-child {
+    border-bottom: 0;
+  }
+
+  &--output {
+    padding: 0;
+  }
+}
+
+.pw-slot__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px 0 12px;
+  background: color-mix(in srgb, var(--rp-color-text-muted) 6%, transparent);
+}
+
+.pw-slot__name {
+  flex: 1;
+  overflow: hidden;
+  color: var(--rp-color-text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pw-form {
   display: flex;
   flex-direction: column;
@@ -270,13 +332,14 @@ onBeforeUnmount(() => {
   }
 }
 
-.pw-params__output {
-  height: 100%;
-}
-
 .pw-params__hint {
   margin: 8px 0 0;
   color: var(--rp-color-text-muted);
   font-size: 12px;
+
+  &--empty {
+    padding: 12px;
+    margin: 0;
+  }
 }
 </style>

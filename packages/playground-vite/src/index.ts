@@ -61,6 +61,8 @@ interface SceneEntry {
   hidden?: boolean
   /** 源码面板的文件列表（场景自身 + sceneMeta.files） */
   sources: { rel: string; url: string }[]
+  /** 合成条目（分组落地页）没有源文件 */
+  kind?: 'scene' | 'group-index'
 }
 
 interface PlaygroundUserConfig {
@@ -72,6 +74,10 @@ interface PlaygroundUserConfig {
   components?: string[]
   /** 组件提取用的 tsconfig，默认项目根的 tsconfig.json */
   tsconfig?: string
+  /** 分组目录名 → 侧栏显示名 */
+  groups?: Record<string, string>
+  /** 是否给每个分组合成「概览」落地页 */
+  groupIndex?: boolean
   [key: string]: unknown
 }
 
@@ -170,6 +176,9 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
     if (!fs.existsSync(scenesDir)) return []
 
     const entries: SceneEntry[] = []
+    /** 分组目录名 → 显示名，顺带收集给合成落地页用 */
+    const groupLabels = new Map<string, string>()
+
     for (const { abs, rel } of walkScenes(scenesDir)) {
       const id = rel.replace(/\.vue$/, '')
       const segments = id.split('/')
@@ -177,11 +186,15 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
       const nameRaw = segments.at(-1) as string
       const meta = await readSceneMeta(abs)
       const relPath = toPosix(path.relative(root, abs))
+      const groupLabel = groupRaw
+        ? (config.groups?.[groupRaw] ?? titleize(groupRaw))
+        : 'Scenes'
+      if (groupRaw) groupLabels.set(groupRaw, groupLabel)
 
       entries.push({
         id,
         title: meta.title ?? titleize(nameRaw),
-        group: groupRaw ? titleize(groupRaw) : 'Scenes',
+        group: groupLabel,
         url: `/${relPath}`,
         file: abs,
         rel: relPath,
@@ -204,6 +217,23 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
             .filter((entry): entry is { rel: string; url: string } => entry !== null),
         ],
       })
+    }
+
+    // 每个分组合成一个「概览」落地页（groupIndex: true 时）
+    if (config.groupIndex) {
+      for (const [dir, label] of groupLabels) {
+        entries.push({
+          id: `${dir}/__index`,
+          title: '概览',
+          group: label,
+          url: '',
+          file: '',
+          rel: '',
+          order: Number.MIN_SAFE_INTEGER,
+          kind: 'group-index',
+          sources: [],
+        })
+      }
     }
 
     return entries.sort((a, b) => a.order - b.order || a.rel.localeCompare(b.rel))
@@ -264,11 +294,29 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
 
   const scenesModuleCode = (): string => {
     const entries = scenes
-      .map(
-        (scene) => `  {
+      .map((scene) => {
+        const isIndex = scene.kind === 'group-index'
+        const sources = isIndex
+          ? '[]'
+          : `[${scene.sources
+              .map(
+                (source) => `{ rel: ${JSON.stringify(source.rel)}, raw: () => import(${JSON.stringify(
+                  `${source.url}?raw`
+                )}).then((mod) => mod.default) }`
+              )
+              .join(', ')}]`
+        const loader = isIndex
+          ? '() => Promise.resolve({ default: null })'
+          : `() => import(${JSON.stringify(scene.url)})`
+        const rawLoader = isIndex
+          ? "() => Promise.resolve('')"
+          : `() => import(${JSON.stringify(`${scene.url}?raw`)}).then((mod) => mod.default)`
+
+        return `  {
     id: ${JSON.stringify(scene.id)},
     title: ${JSON.stringify(scene.title)},
     group: ${JSON.stringify(scene.group)},
+    kind: ${JSON.stringify(scene.kind ?? 'scene')},
     path: ${JSON.stringify(scene.url)},
     file: ${JSON.stringify(scene.file)},
     rel: ${JSON.stringify(scene.rel)},
@@ -277,17 +325,11 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
     tags: ${JSON.stringify(scene.tags ?? null)},
     description: ${JSON.stringify(scene.description ?? null)},
     hidden: ${JSON.stringify(scene.hidden === true)},
-    sources: [${scene.sources
-      .map(
-        (source) => `{ rel: ${JSON.stringify(source.rel)}, raw: () => import(${JSON.stringify(
-          `${source.url}?raw`
-        )}).then((mod) => mod.default) }`
-      )
-      .join(', ')}],
-    load: () => import(${JSON.stringify(scene.url)}),
-    raw: () => import(${JSON.stringify(`${scene.url}?raw`)}).then((mod) => mod.default)
+    sources: ${sources},
+    load: ${loader},
+    raw: ${rawLoader}
   }`
-      )
+      })
       .join(',\n')
 
     return `export const scenes = [

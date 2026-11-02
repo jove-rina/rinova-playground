@@ -1,7 +1,7 @@
 {
   "name": "@rinova/playground",
-  "version": "0.1.4",
-  "description": "\u9762\u5411 Vue3 \u7684\u300c\u6587\u4ef6\u5373\u573a\u666f\u300d\u7ec4\u4ef6\u6f14\u793a\u6846\u67b6",
+  "version": "0.1.5",
+  "description": "面向 Vue3 的「文件即场景」组件演示框架",
   "type": "module",
   "license": "MIT",
   "exports": {
@@ -10,6 +10,7 @@
       "default": "./dist/index.js"
     },
     "./style.css": "./dist/style.css",
+    "./editor.css": "./dist/editor.css",
     "./package.json": "./package.json"
   },
   "files": [
@@ -27,7 +28,7 @@
     "shiki": "4.6.0"
   },
   "scripts": {
-    "build": "vue-tsc --noEmit -p tsconfig.build.json && vite build && vue-tsc -p tsconfig.types.json && node --experimental-strip-types scripts/finalize-types.ts",
+    "build": "vue-tsc --noEmit -p tsconfig.build.json && vite build && node --experimental-strip-types scripts/copy-editor-css.ts && vue-tsc -p tsconfig.types.json && node --experimental-strip-types scripts/finalize-types.ts",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {

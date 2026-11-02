@@ -34,6 +34,16 @@ export interface PlaygroundConfig {
   components?: string[]
   /** 组件契约提取用的 tsconfig，默认项目根的 tsconfig.json */
   tsconfig?: string
+  /**
+   * 分组（scenes 下的一级目录名）→ 侧栏显示名。
+   * 例如 `{ 'tao-common': 'Tao 通用组件' }`；不配时用目录名首字母大写化。
+   */
+  groups?: Record<string, string>
+  /**
+   * 是否为每个分组自动合成一个「概览」落地页（列出该组所有场景）。
+   * 合成页没有源文件，不算进「N 个场景」的计数。默认 false。
+   */
+  groupIndex?: boolean
 }
 
 export const defineConfig = (config: PlaygroundConfig): PlaygroundConfig => config
