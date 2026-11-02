@@ -1,0 +1,20 @@
+{
+  "name": "@rinova/example-minimal-lib",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@rinova/playground": "workspace:*",
+    "vue": "3.5.44"
+  },
+  "devDependencies": {
+    "@rinova/playground-vite": "workspace:*",
+    "@vitejs/plugin-vue": "6.0.10",
+    "vite": "8.3.5"
+  }
+}

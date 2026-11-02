@@ -1,0 +1,16 @@
+{
+  "name": "rinova-playground-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.3.4",
+  "scripts": {
+    "dev": "pnpm --filter @rinova/example-minimal-lib dev",
+    "build": "pnpm --filter @rinova/example-minimal-lib build",
+    "preview": "pnpm --filter @rinova/example-minimal-lib preview",
+    "verify": "node scripts/verify-m0.mjs"
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}

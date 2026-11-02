@@ -1,0 +1,27 @@
+{
+  "name": "@rinova/playground",
+  "version": "0.0.0",
+  "description": "面向 Vue3 的「文件即场景」组件演示框架",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./styles": "./src/styles/theme.css",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src"
+  ],
+  "peerDependencies": {
+    "vue": "^3.5.0"
+  },
+  "dependencies": {
+    "@lucide/vue": "1.66.0",
+    "@shikijs/langs": "4.6.0",
+    "@shikijs/themes": "4.6.0",
+    "shiki": "4.6.0"
+  }
+}
