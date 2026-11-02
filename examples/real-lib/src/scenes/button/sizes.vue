@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button'
 </script>
 
 <template>
-  <div class="flex w-full flex-wrap items-center gap-3 p-6">
+  <div class="flex flex-wrap items-center gap-3 p-6">
     <Button size="xs">xs</Button>
     <Button size="sm">sm</Button>
     <Button size="default">default</Button>

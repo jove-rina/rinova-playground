@@ -25,7 +25,7 @@ const args = useSceneArgs(
 </script>
 
 <template>
-  <div class="flex w-full flex-wrap items-center gap-3 p-6">
+  <div class="flex flex-wrap items-center gap-3 p-6">
     <Badge :variant="args.variant">当前</Badge>
     <Badge variant="secondary">Secondary</Badge>
     <Badge variant="destructive">Destructive</Badge>

@@ -19,7 +19,7 @@ useSceneOutput(() => ({ 输入长度: text.value.length, 内容: text.value }))
 </script>
 
 <template>
-  <div class="flex w-full max-w-sm flex-col gap-3 p-6">
+  <div class="flex max-w-sm flex-col gap-3 p-6">
     <Input v-model="text" placeholder="随便输点什么" />
     <Input default-value="默认值" disabled />
   </div>

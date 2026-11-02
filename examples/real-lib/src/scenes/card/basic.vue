@@ -26,7 +26,7 @@ const args = useSceneArgs({ small: false }, { labels: { small: '紧凑尺寸' } 
 </script>
 
 <template>
-  <div class="w-full p-6">
+  <div class="p-6">
     <Card :size="args.small ? 'sm' : 'default'" class="max-w-sm">
       <CardHeader>
         <CardTitle class="flex items-center gap-2">

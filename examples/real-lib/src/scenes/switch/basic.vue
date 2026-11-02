@@ -24,7 +24,7 @@ useSceneOutput(() => ({ 主开关: args.on, 副开关: extra.value, 尺寸: args
 </script>
 
 <template>
-  <div class="flex w-full flex-col gap-4 p-6">
+  <div class="flex flex-col gap-4 p-6">
     <label class="flex items-center gap-3 text-sm">
       <Switch v-model="args.on" :size="args.small ? 'sm' : 'default'" />
       跟随面板

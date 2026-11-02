@@ -29,5 +29,5 @@ pnpm --filter @rinova/example-real-lib build   # 产物 dist/ + 契约清单
 
 ## 两个接入要点（踩过的）
 
-- **场景根元素要自己撑满宽度**：预览区把场景内容按「内容宽度」排版并居中（`flex: 0 0 auto`），所以根元素不加 `w-full` 时，内部 `flex-wrap` 不会换行，只会横向滚动。每个场景根都写了 `w-full`。
+- **场景根元素不用手动撑满宽度**：预览区会把场景内容封顶在容器宽度内（`.pw-stage__inner > * { flex: 0 0 auto; max-width: 100% }`），所以 `flex-wrap` 的宽内容会正常换行、不会横向溢出。0.1.1 及以前没有这条封顶，需要在场景根写 `w-full`，现在已经不需要。
 - **`cn` 工具函数别用 npm 上的 `cn` 包**：shadcn-vue CLI 会把 `@/lib/utils` 解析成依赖 `cn`，需要改回项目内的 `src/lib/utils.ts`（clsx + tailwind-merge），并删掉那个依赖。

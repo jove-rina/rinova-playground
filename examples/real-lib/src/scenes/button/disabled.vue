@@ -21,7 +21,7 @@ useSceneOutput(() => ({ 点击次数: count.value, 禁用: args.disabled }))
 </script>
 
 <template>
-  <div class="flex w-full items-center gap-4 p-6">
+  <div class="flex items-center gap-4 p-6">
     <Button :disabled="args.disabled" @click="count += 1">点我（{{ count }}）</Button>
     <span class="text-sm text-muted-foreground">右侧勾选「禁用」后按钮不可点</span>
   </div>

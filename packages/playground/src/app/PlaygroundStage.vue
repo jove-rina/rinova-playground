@@ -71,9 +71,11 @@ watch(
   min-width: 0;
   overflow-x: auto;
 
-  /* 场景内容不要被压缩：窄容器时横向滚动，而不是把按钮挤成几行 */
+  /* 场景内容不要被压缩：窄容器时横向滚动，而不是把按钮挤成几行。
+     max-width 封顶在容器宽度内，宽内容才会真正换行（否则按 max-content 排版，flex-wrap 永远不生效）。 */
   & > :deep(*) {
     flex: 0 0 auto;
+    max-width: 100%;
   }
 }
 
