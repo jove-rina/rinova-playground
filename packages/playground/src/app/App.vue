@@ -91,16 +91,30 @@ const copySource = async () => {
   }
 }
 
-/* ---------------- 路由 ---------------- */
+/* ---------------- 路由（History API） ---------------- */
 
-const readHash = () => {
-  const raw = decodeURIComponent(window.location.hash.replace(/^#\/?/, ''))
-  if (raw && scenes.some((scene) => scene.id === raw)) activeId.value = raw
+const basePath = (() => {
+  const raw = config.base ?? '/'
+  return raw.endsWith('/') ? raw : `${raw}/`
+})()
+
+/** 从 location.pathname 解析出场景 id（去掉 base 与尾部斜杠） */
+const sceneIdFromPath = (): string => {
+  const path = decodeURIComponent(window.location.pathname)
+  const trimmed = path.startsWith(basePath) ? path.slice(basePath.length) : path.replace(/^\//, '')
+  return trimmed.replace(/\/+$/, '')
+}
+
+const readLocation = () => {
+  const id = sceneIdFromPath()
+  if (id && scenes.some((scene) => scene.id === id)) activeId.value = id
 }
 
 watch(activeId, (id) => {
-  if (id && window.location.hash !== `#/${id}`) {
-    window.history.replaceState(null, '', `#/${id}`)
+  if (!id) return
+  const target = `${basePath}${id}`
+  if (decodeURIComponent(window.location.pathname) !== target) {
+    window.history.pushState(null, '', target)
   }
 })
 
@@ -134,17 +148,17 @@ onMounted(() => {
   document.title = title
   systemDark.value = media.matches
   media.addEventListener('change', onMediaChange)
-  readHash()
-  if (activeId.value && !window.location.hash) {
-    window.history.replaceState(null, '', `#/${activeId.value}`)
+  readLocation()
+  if (activeId.value && sceneIdFromPath() !== activeId.value) {
+    window.history.replaceState(null, '', `${basePath}${activeId.value}`)
   }
-  window.addEventListener('hashchange', readHash)
+  window.addEventListener('popstate', readLocation)
   window.addEventListener('keydown', onKeydown)
 })
 
 onBeforeUnmount(() => {
   media.removeEventListener('change', onMediaChange)
-  window.removeEventListener('hashchange', readHash)
+  window.removeEventListener('popstate', readLocation)
   window.removeEventListener('keydown', onKeydown)
 })
 </script>

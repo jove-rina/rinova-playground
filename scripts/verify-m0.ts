@@ -147,6 +147,12 @@ const jsSources = [
 ]
 record('产品代码无 JS 源文件（只用 TS）', jsSources.length === 0, jsSources.map(rel).join(', '))
 
+/* 9. 路由必须是 History，不许用 hash */
+const hashHits = walk(path.join(pkgDir, 'src'), (file) => /\.(ts|vue)$/.test(file)).filter((file) =>
+  /location\.hash|hashchange/.test(fs.readFileSync(file, 'utf8'))
+)
+record('路由使用 History API（无 hash）', hashHits.length === 0, hashHits.map(rel).join(', '))
+
 /* 输出 */
 let failed = 0
 for (const item of results) {
