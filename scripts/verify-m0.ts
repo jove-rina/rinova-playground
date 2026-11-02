@@ -179,6 +179,17 @@ if (fs.existsSync(manifestPath)) {
   record('契约清单提取正确（含未覆盖标记）', true, '未生成 manifest，跳过')
 }
 
+/* 12. 脚手架默认开契约清单：模板必须声明 components，否则新人拿不到 manifest */
+const templateConfigPath = path.join(root, 'packages/create-playground/template/playground.config.ts')
+const templateConfig = fs.existsSync(templateConfigPath)
+  ? fs.readFileSync(templateConfigPath, 'utf8')
+  : ''
+record(
+  '脚手架模板默认开契约清单',
+  /components:\s*\[/.test(templateConfig) && templateConfig.includes('src/components'),
+  templateConfig ? '模板 playground.config.ts 声明了 components' : '模板配置文件缺失',
+)
+
 /* 输出 */
 let failed = 0
 for (const item of results) {
