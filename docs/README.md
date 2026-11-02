@@ -33,6 +33,7 @@
 | D9 | 样式统一用 Less（`<style lang="less">` + `styles/mixins.less` 共享变量与 mixin），不写裸 CSS | 04 |
 | D10 | 代码只允许箭头函数，禁止 `function` 声明（验收脚本强制） | 04 |
 | D11 | 框架代码只写 TypeScript，不留 JS 源码；`@rinova/playground-vite` 由 `tsc` 构建出 dist + d.ts | 04 |
+| D12 | 全仓统一 `typescript@5.9.3`（唯一版本），不用 TS 7 —— 以能用最新稳定 `vue-tsc` 为准 | 04 / 06 |
 
 ## 包结构
 
