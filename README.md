@@ -22,7 +22,7 @@ const size = ref('large')
 
 ## 状态
 
-v0.1.0 功能完成（M0–M3 验收全绿），文档站与两个示例可用；尚未发布到 npm。
+v0.1.0 已发布到 npm：`@rinova/playground`、`@rinova/playground-vite`、`@rinova/playground-mcp`、`create-rinova-playground`。M0–M5 验收全绿。
 
 ```bash
 pnpm install
