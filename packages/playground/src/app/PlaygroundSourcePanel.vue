@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Check, Copy, Lock, Pencil, RotateCcw, X } from '@lucide/vue'
+import { Check, Copy, X } from '@lucide/vue'
 import config from 'virtual:playground/config'
 import PwButton from '../components/PwButton.vue'
 import { toast } from '../components/toast'
@@ -18,10 +18,8 @@ defineEmits<{ close: [] }>()
 
 const activeIndex = ref(0)
 const text = ref('')
-const original = ref('')
 const loading = ref(true)
 const failed = ref(false)
-const editing = ref(false)
 const copied = ref(false)
 const cache = new Map<string, string>()
 
@@ -30,8 +28,6 @@ const viewer = config.codeViewer ?? 'monaco'
 const active = computed(() => props.scene.sources[activeIndex.value] ?? props.scene.sources[0])
 
 const fileName = (file: string): string => file.split('/').pop() ?? file
-
-const dirty = computed(() => editing.value && text.value !== original.value)
 
 const load = async (index: number): Promise<void> => {
   const source = props.scene.sources[index]
@@ -42,11 +38,9 @@ const load = async (index: number): Promise<void> => {
     const content = cached ?? (await source.raw())
     cache.set(source.rel, content)
     text.value = content
-    original.value = content
   } catch (error) {
     toast(`源码读取失败：${error instanceof Error ? error.message : String(error)}`, 'error')
     text.value = ''
-    original.value = ''
   } finally {
     loading.value = false
   }
@@ -56,7 +50,6 @@ watch(
   () => props.scene,
   () => {
     activeIndex.value = 0
-    editing.value = false
     void load(0)
   },
   { immediate: true }
@@ -65,18 +58,7 @@ watch(
 const select = (index: number): void => {
   if (index === activeIndex.value) return
   activeIndex.value = index
-  editing.value = false
   void load(index)
-}
-
-const toggleEdit = (): void => {
-  editing.value = !editing.value
-  if (!editing.value) text.value = original.value
-}
-
-const reset = (): void => {
-  text.value = original.value
-  toast('已还原为原始源码', 'info')
 }
 
 const copy = async (): Promise<void> => {
@@ -106,25 +88,9 @@ const copy = async (): Promise<void> => {
         >
           {{ fileName(source.rel) }}
         </button>
-        <span v-if="dirty" class="pw-source__dirty">已修改</span>
       </div>
 
       <div class="pw-source__actions">
-        <PwButton
-          v-if="viewer === 'monaco' && !failed"
-          size="sm"
-          variant="text"
-          :title="editing ? '切回只读' : '编辑（改动只存在于内存，不会写入磁盘）'"
-          @click="toggleEdit"
-        >
-          <template #icon>
-            <Lock v-if="editing" :size="13" />
-            <Pencil v-else :size="13" />
-          </template>
-        </PwButton>
-        <PwButton v-if="dirty" size="sm" variant="text" title="还原" @click="reset">
-          <template #icon><RotateCcw :size="13" /></template>
-        </PwButton>
         <PwButton size="sm" variant="text" :title="copied ? '已复制' : '复制源码'" @click="copy">
           <template #icon>
             <Check v-if="copied" :size="13" />
@@ -142,9 +108,9 @@ const copy = async (): Promise<void> => {
       <template v-else-if="active">
         <CodeEditor
           v-if="viewer === 'monaco' && !failed"
-          v-model="text"
+          :model-value="text"
           :filename="active.rel"
-          :read-only="!editing"
+          read-only
           :theme="theme"
           @fail="failed = true"
         />
@@ -211,11 +177,6 @@ const copy = async (): Promise<void> => {
   }
 }
 
-.pw-source__dirty {
-  margin-left: 4px;
-  color: var(--rp-color-warning);
-  font-size: 11px;
-}
 
 .pw-source__actions {
   display: flex;
