@@ -32,6 +32,7 @@
 | D8 | 运行时与插件使用 `@rinova` scope：`@rinova/playground` / `@rinova/playground-vite` / `@rinova/playground-mcp`；脚手架为 `create-rinova-playground`（npm 的 `create-*` 约定，不带 scope），创建命令 `pnpm create rinova-playground` | 本页 |
 | D9 | 样式统一用 Less（`<style lang="less">` + `styles/mixins.less` 共享变量与 mixin），不写裸 CSS | 04 |
 | D10 | 代码只允许箭头函数，禁止 `function` 声明（验收脚本强制） | 04 |
+| D11 | 框架代码只写 TypeScript，不留 JS 源码；`@rinova/playground-vite` 由 `tsc` 构建出 dist + d.ts | 04 |
 
 ## 包结构
 

@@ -6,19 +6,27 @@
   "license": "MIT",
   "exports": {
     ".": {
-      "types": "./index.d.ts",
-      "default": "./index.js"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
     "./package.json": "./package.json"
   },
   "files": [
-    "index.js",
-    "index.d.ts"
+    "dist"
   ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
   "dependencies": {
     "jiti": "2.7.0"
   },
   "peerDependencies": {
     "vite": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "typescript": "5.9.3",
+    "vite": "8.3.5"
   }
 }

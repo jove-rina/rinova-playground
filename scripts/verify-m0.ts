@@ -2,7 +2,7 @@
 /**
  * M0 验收脚本。
  *
- *   node scripts/verify-m0.mjs
+ *   pnpm verify     # node --experimental-strip-types scripts/verify-m0.ts
  *
  * 静态检查始终执行；运行时检查需要 dev server 已在 5273 端口运行，否则跳过。
  */
@@ -12,13 +12,20 @@ import path from 'node:path'
 const root = process.cwd()
 const pkgDir = path.join(root, 'packages/playground')
 const exampleDir = path.join(root, 'examples/minimal-lib')
-const results = []
 
-const record = (name, ok, detail = '') => {
+interface CheckResult {
+  name: string
+  ok: boolean
+  detail: string
+}
+
+const results: CheckResult[] = []
+
+const record = (name: string, ok: boolean, detail = ''): void => {
   results.push({ name, ok, detail })
 }
 
-const walk = (dir, filter, out = []) => {
+const walk = (dir: string, filter: (file: string) => boolean, out: string[] = []): string[] => {
   if (!fs.existsSync(dir)) return out
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const abs = path.join(dir, entry.name)
@@ -28,27 +35,29 @@ const walk = (dir, filter, out = []) => {
   return out
 }
 
+const rel = (file: string): string => path.relative(root, file)
+
 /* 1. 不许出现 UI 组件库 */
 const FORBIDDEN = ['element-plus', 'naive-ui', 'ant-design-vue', 'vuetify', 'tailwindcss', 'unocss']
 const manifests = walk(root, (file) => file.endsWith('package.json') && !file.includes('node_modules'))
-const offenders = []
+const offenders: string[] = []
 for (const file of manifests) {
-  const json = JSON.parse(fs.readFileSync(file, 'utf8'))
+  const json = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, Record<string, string> | undefined>
   const deps = { ...json.dependencies, ...json.devDependencies, ...json.peerDependencies }
   for (const name of FORBIDDEN) {
-    if (deps[name]) offenders.push(`${path.relative(root, file)} → ${name}`)
+    if (deps[name]) offenders.push(`${rel(file)} → ${name}`)
   }
 }
 record('无 UI 库依赖', offenders.length === 0, offenders.join(', '))
 
 /* 2. 框架组件样式里不许出现硬编码色值 */
-const styleFiles = walk(path.join(pkgDir, 'src'), (file) => /\.(vue|css)$/.test(file))
-const hardcoded = []
+const styleFiles = walk(path.join(pkgDir, 'src'), (file) => /\.(vue|less)$/.test(file))
+const hardcoded: string[] = []
 for (const file of styleFiles) {
+  if (file.endsWith('theme.less')) continue // 变量定义文件允许
   const text = fs.readFileSync(file, 'utf8')
   const hits = [...text.matchAll(/#[0-9a-fA-F]{3,8}\b|rgba?\(/g)]
-  if (file.endsWith('theme.less')) continue // 变量定义文件允许
-  if (hits.length) hardcoded.push(`${path.relative(root, file)}: ${hits.length} 处`)
+  if (hits.length) hardcoded.push(`${rel(file)}: ${hits.length} 处`)
 }
 record('组件样式无硬编码色值', hardcoded.length === 0, hardcoded.join(', '))
 
@@ -77,13 +86,13 @@ const aliasHits = srcFiles.filter((file) => /from ['"]@\//.test(fs.readFileSync(
 record('内核无 @/ 别名引用', aliasHits.length === 0, aliasHits.join(', '))
 
 /* 5. 运行时：侧栏场景数与磁盘一致 */
-const scanDiskScenes = (dir, prefix = '', out = []) => {
+const scanDiskScenes = (dir: string, prefix = '', out: string[] = []): string[] => {
   if (!fs.existsSync(dir)) return out
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const rel = prefix ? `${prefix}/${entry.name}` : entry.name
+    const relPath = prefix ? `${prefix}/${entry.name}` : entry.name
     const abs = path.join(dir, entry.name)
-    if (entry.isDirectory()) scanDiskScenes(abs, rel, out)
-    else if (entry.name.endsWith('.vue')) out.push(rel.replace(/\.vue$/, ''))
+    if (entry.isDirectory()) scanDiskScenes(abs, relPath, out)
+    else if (entry.name.endsWith('.vue')) out.push(relPath.replace(/\.vue$/, ''))
   }
   return out
 }
@@ -94,10 +103,9 @@ const VIRTUAL = 'http://localhost:5273/@id/__x00__virtual:playground/scenes'
 try {
   const res = await fetch(VIRTUAL, { signal: AbortSignal.timeout(2000) })
   const code = await res.text()
-  const runtimeScenes = [...code.matchAll(/id: "([^"]+)"/g)].map((m) => m[1]).sort()
+  const runtimeScenes = [...code.matchAll(/id: "([^"]+)"/g)].map((match) => match[1] as string).sort()
   const same =
-    runtimeScenes.length === diskScenes.length &&
-    runtimeScenes.every((id, index) => id === diskScenes[index])
+    runtimeScenes.length === diskScenes.length && runtimeScenes.every((id, index) => id === diskScenes[index])
   record(
     '侧栏场景与磁盘一致',
     same,
@@ -109,28 +117,35 @@ try {
 
 /* 6. 不允许 function 声明，一律箭头函数（只扫产品代码，不扫本脚本） */
 const codeFiles = [
-  ...walk(path.join(root, 'packages'), (file) => /\.(ts|js|mjs|vue)$/.test(file) && !file.includes('node_modules')),
+  ...walk(path.join(root, 'packages'), (file) => /\.(ts|vue)$/.test(file) && !file.includes('node_modules') && !file.includes('/dist/')),
   ...walk(path.join(exampleDir, 'src'), (file) => /\.(ts|vue)$/.test(file)),
 ]
-const functionHits = []
+const functionHits: string[] = []
 for (const file of codeFiles) {
   const text = fs.readFileSync(file, 'utf8')
-  if (/(^|[^\w.$])function\s+[\w$]*\s*\(/m.test(text)) functionHits.push(path.relative(root, file))
+  if (/(^|[^\w.$])function\s+[\w$]*\s*\(/m.test(text)) functionHits.push(rel(file))
 }
 record('无 function 声明（只用箭头函数）', functionHits.length === 0, functionHits.join(', '))
 
 /* 7. 样式一律 less */
-const styleFileHits = walk(path.join(pkgDir, 'src'), (file) => file.endsWith('.css'))
+const plainCss = walk(path.join(pkgDir, 'src'), (file) => file.endsWith('.css'))
 const vueFiles = codeFiles.filter((file) => file.endsWith('.vue'))
-const plainStyleBlocks = []
+const plainStyleBlocks: string[] = []
 for (const file of vueFiles) {
   const text = fs.readFileSync(file, 'utf8')
   for (const match of text.matchAll(/<style([^>]*)>/g)) {
-    if (!/lang="less"/.test(match[1])) plainStyleBlocks.push(path.relative(root, file))
+    if (!/lang="less"/.test(match[1] as string)) plainStyleBlocks.push(rel(file))
   }
 }
-const lessOk = styleFileHits.length === 0 && plainStyleBlocks.length === 0
-record('样式统一 less', lessOk, [...styleFileHits, ...plainStyleBlocks].map((f) => path.relative(root, f)).join(', '))
+const lessOk = plainCss.length === 0 && plainStyleBlocks.length === 0
+record('样式统一 less', lessOk, [...plainCss, ...plainStyleBlocks].map(rel).join(', '))
+
+/* 8. 产品代码不允许 JS：只许 .ts / .vue（构建产物 dist 除外） */
+const jsSources = [
+  ...walk(path.join(root, 'packages'), (file) => /\.(js|mjs|cjs)$/.test(file) && !file.includes('node_modules') && !file.includes('/dist/')),
+  ...walk(path.join(exampleDir, 'src'), (file) => /\.(js|mjs|cjs)$/.test(file)),
+]
+record('产品代码无 JS 源文件（只用 TS）', jsSources.length === 0, jsSources.map(rel).join(', '))
 
 /* 输出 */
 let failed = 0

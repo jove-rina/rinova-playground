@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@rinova/playground": "workspace:*",
@@ -16,6 +17,8 @@
     "@rinova/playground-vite": "workspace:*",
     "@vitejs/plugin-vue": "6.0.10",
     "less": "4.9.1",
-    "vite": "8.3.5"
+    "typescript": "5.9.3",
+    "vite": "8.3.5",
+    "vue-tsc": "3.3.14"
   }
 }

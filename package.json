@@ -5,12 +5,19 @@
   "type": "module",
   "packageManager": "pnpm@12.3.4",
   "scripts": {
-    "dev": "pnpm --filter @rinova/example-minimal-lib dev",
-    "build": "pnpm --filter @rinova/example-minimal-lib build",
+    "build:plugin": "pnpm --filter @rinova/playground-vite build",
+    "dev": "pnpm build:plugin && pnpm --filter @rinova/example-minimal-lib dev",
+    "build": "pnpm build:plugin && pnpm --filter @rinova/example-minimal-lib build",
     "preview": "pnpm --filter @rinova/example-minimal-lib preview",
-    "verify": "node scripts/verify-m0.mjs"
+    "typecheck": "pnpm -r typecheck",
+    "verify": "node --experimental-strip-types scripts/verify-m0.ts"
   },
   "engines": {
     "node": ">=22.12"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "typescript": "5.9.3",
+    "vue-tsc": "3.3.14"
   }
 }

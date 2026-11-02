@@ -147,3 +147,9 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# 框架包构建产物
+packages/*/dist
+
+# 编辑器本地配置
+.vscode/

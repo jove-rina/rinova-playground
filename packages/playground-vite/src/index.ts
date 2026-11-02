@@ -1,10 +1,12 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { createJiti } from 'jiti'
+import type { Plugin, ViteDevServer } from 'vite'
 
 const VIRTUAL_CONFIG = 'virtual:playground/config'
 const VIRTUAL_SCENES = 'virtual:playground/scenes'
-const RESOLVED_ID = {
+
+const RESOLVED_ID: Record<string, string> = {
   [VIRTUAL_CONFIG]: `\0${VIRTUAL_CONFIG}`,
   [VIRTUAL_SCENES]: `\0${VIRTUAL_SCENES}`,
 }
@@ -18,8 +20,41 @@ const CONFIG_FILES = [
 
 const DEFAULT_SCENES_DIR = 'src/scenes'
 
+export interface PlaygroundPluginOptions {
+  /** 指定配置文件路径，默认在项目根查找 playground.config.{ts,mts,js,mjs} */
+  configFile?: string
+  /** 覆盖配置里的 scenes 目录 */
+  scenes?: string
+}
+
+interface ScannedFile {
+  abs: string
+  rel: string
+}
+
+interface SceneEntry {
+  id: string
+  title: string
+  group: string
+  /** 相对项目根的 URL，用于动态 import */
+  url: string
+  /** 绝对文件路径 */
+  file: string
+  /** 相对项目根的路径，如 `src/scenes/button/basic.vue` */
+  rel: string
+  order: string
+}
+
+interface PlaygroundUserConfig {
+  title?: string
+  scenes?: string
+  base?: string
+  port?: number
+  [key: string]: unknown
+}
+
 /** `size-large` → `Size Large`；含中文时原样返回 */
-const titleize = (name) => {
+const titleize = (name: string): string => {
   if (/[\u3400-\u9fff]/.test(name)) return name
   return name
     .replace(/[-_]+/g, ' ')
@@ -28,13 +63,10 @@ const titleize = (name) => {
     .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
-const toPosix = (value) => {
-  return value.split(path.sep).join('/')
-}
+const toPosix = (value: string): string => value.split(path.sep).join('/')
 
-const walkScenes = (dir, prefix = '') => {
-  /** @type {{ abs: string, rel: string }[]} */
-  const out = []
+const walkScenes = (dir: string, prefix = ''): ScannedFile[] => {
+  const out: ScannedFile[] = []
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (entry.name.startsWith('.') || entry.name === 'node_modules') continue
     const abs = path.join(dir, entry.name)
@@ -51,19 +83,22 @@ const walkScenes = (dir, prefix = '') => {
 /**
  * rinova-playground 的 Vite 插件。
  *
- * @param {{ configFile?: string, scenes?: string }} [options]
+ * ```ts
+ * import { playground } from '@rinova/playground-vite'
+ * export default defineConfig({ plugins: [vue(), playground()] })
+ * ```
  */
-export const playground = (options = {}) => {
+export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
   let root = process.cwd()
-  let config = {}
+  let config: PlaygroundUserConfig = {}
   let resolved = false
   let scenesDir = ''
-  let scenes = []
+  let scenes: SceneEntry[] = []
   let configFile = ''
 
   const jiti = createJiti(import.meta.url, { interopDefault: true, moduleCache: false })
 
-  const findConfigFile = () => {
+  const findConfigFile = (): string => {
     if (options.configFile) return path.resolve(root, options.configFile)
     for (const name of CONFIG_FILES) {
       const file = path.join(root, name)
@@ -72,65 +107,69 @@ export const playground = (options = {}) => {
     return ''
   }
 
-  const scanScenes = () => {
+  const scanScenes = (): SceneEntry[] => {
     if (!fs.existsSync(scenesDir)) return []
 
     return walkScenes(scenesDir)
       .map(({ abs, rel }) => {
         const id = rel.replace(/\.vue$/, '')
         const segments = id.split('/')
-        const groupRaw = segments.length > 1 ? segments[0] : ''
-        const nameRaw = segments[segments.length - 1]
+        const groupRaw = segments.length > 1 ? (segments[0] as string) : ''
+        const nameRaw = segments.at(-1) as string
 
         return {
           id,
           title: titleize(nameRaw),
           group: groupRaw ? titleize(groupRaw) : 'Scenes',
-          path: `/${toPosix(path.relative(root, abs))}`,
+          url: `/${toPosix(path.relative(root, abs))}`,
           file: abs,
           rel: toPosix(path.relative(root, abs)),
-          lang: 'vue',
           order: id,
         }
       })
       .sort((a, b) => a.order.localeCompare(b.order))
   }
 
-  const ensureReady = async () => {
+  const ensureReady = async (): Promise<void> => {
     if (resolved) return
     configFile = findConfigFile()
-    config = configFile ? ((await jiti.import(configFile)).default ?? {}) : {}
+    if (configFile) {
+      const mod = (await jiti.import(configFile)) as { default?: PlaygroundUserConfig }
+      config = mod.default ?? {}
+    } else {
+      config = {}
+    }
     scenesDir = path.resolve(root, options.scenes ?? config.scenes ?? DEFAULT_SCENES_DIR)
     scenes = scanScenes()
     resolved = true
   }
 
-  const invalidateScenes = (server) => {
+  const invalidateScenes = (server: ViteDevServer): void => {
     resolved = false
-    const mod = server.moduleGraph.getModuleById(RESOLVED_ID[VIRTUAL_SCENES])
-    if (mod) server.moduleGraph.invalidateModule(mod)
-    const configMod = server.moduleGraph.getModuleById(RESOLVED_ID[VIRTUAL_CONFIG])
-    if (configMod) server.moduleGraph.invalidateModule(configMod)
+    for (const id of [RESOLVED_ID[VIRTUAL_SCENES], RESOLVED_ID[VIRTUAL_CONFIG]]) {
+      const mod = id ? server.moduleGraph.getModuleById(id) : undefined
+      if (mod) server.moduleGraph.invalidateModule(mod)
+    }
   }
 
-  const configModuleCode = () => {
+  const configModuleCode = (): string => {
     const payload = { ...config, sceneCount: scenes.length }
     return `export default ${JSON.stringify(payload)}`
   }
 
-  const scenesModuleCode = () => {
+  const scenesModuleCode = (): string => {
     const entries = scenes
       .map(
         (scene) => `  {
     id: ${JSON.stringify(scene.id)},
     title: ${JSON.stringify(scene.title)},
     group: ${JSON.stringify(scene.group)},
-    path: ${JSON.stringify(scene.path)},
+    path: ${JSON.stringify(scene.url)},
     file: ${JSON.stringify(scene.file)},
     rel: ${JSON.stringify(scene.rel)},
     lang: 'vue',
-    load: () => import(${JSON.stringify(scene.path)}),
-    raw: () => import(${JSON.stringify(`${scene.path}?raw`)}).then((mod) => mod.default)
+    load: () => import(${JSON.stringify(scene.url)}),
+    raw: () => import(${JSON.stringify(`${scene.url}?raw`)}).then((mod) => mod.default)
   }`
       )
       .join(',\n')
@@ -145,14 +184,20 @@ ${entries}
     name: 'rinova-playground',
     enforce: 'pre',
 
+    config: async (viteConfig) => {
+      root = viteConfig.root ? path.resolve(viteConfig.root) : process.cwd()
+      await ensureReady()
+      return {
+        ...(typeof config.base === 'string' ? { base: config.base } : {}),
+        ...(typeof config.port === 'number' ? { server: { port: config.port } } : {}),
+      }
+    },
+
     configResolved: (viteConfig) => {
       root = viteConfig.root
     },
 
-    resolveId: (id) => {
-      if (id === VIRTUAL_CONFIG || id === VIRTUAL_SCENES) return RESOLVED_ID[id]
-      return null
-    },
+    resolveId: (id) => (id === VIRTUAL_CONFIG || id === VIRTUAL_SCENES ? RESOLVED_ID[id] : null),
 
     load: async (id) => {
       if (id !== RESOLVED_ID[VIRTUAL_CONFIG] && id !== RESOLVED_ID[VIRTUAL_SCENES]) return null
@@ -164,10 +209,10 @@ ${entries}
       await ensureReady()
       server.watcher.add(scenesDir)
 
-      const refresh = (file) => {
+      const refresh = (file?: string): void => {
         const target = file ?? ''
         const isScene = target.startsWith(scenesDir) && target.endsWith('.vue')
-        const isConfig = configFile && path.resolve(target) === path.resolve(configFile)
+        const isConfig = Boolean(configFile) && path.resolve(target) === path.resolve(configFile)
         if (!isScene && !isConfig) return
         invalidateScenes(server)
         server.ws.send({ type: 'full-reload' })
