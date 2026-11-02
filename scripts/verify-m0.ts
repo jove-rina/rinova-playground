@@ -89,6 +89,8 @@ record('内核无 @/ 别名引用', aliasHits.length === 0, aliasHits.join(', ')
 const scanDiskScenes = (dir: string, prefix = '', out: string[] = []): string[] => {
   if (!fs.existsSync(dir)) return out
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    // 与插件扫描保持一致：点号开头的文件/目录跳过（临时预览文件就藏在这里）
+    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue
     const relPath = prefix ? `${prefix}/${entry.name}` : entry.name
     const abs = path.join(dir, entry.name)
     if (entry.isDirectory()) scanDiskScenes(abs, relPath, out)
