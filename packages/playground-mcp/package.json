@@ -9,7 +9,7 @@
     "url": "https://github.com/jove-rina/rinova-playground"
   },
   "bin": {
-    "rinova-playground-mcp": "./dist/index.js"
+    "rinova-playground-mcp": "dist/index.js"
   },
   "files": [
     "dist"
