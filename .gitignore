@@ -153,3 +153,4 @@ packages/*/dist
 
 # 编辑器本地配置
 .vscode/
+.DS_Store

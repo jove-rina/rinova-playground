@@ -1,7 +1,7 @@
 {
   "name": "@rinova/playground-vite",
   "version": "0.0.0",
-  "description": "rinova-playground 的 Vite 插件：扫描 scenes 目录并生成虚拟模块",
+  "description": "rinova-playground \u7684 Vite \u63d2\u4ef6\uff1a\u626b\u63cf scenes \u76ee\u5f55\u5e76\u751f\u6210\u865a\u62df\u6a21\u5757",
   "type": "module",
   "license": "MIT",
   "exports": {
@@ -26,7 +26,7 @@
   },
   "devDependencies": {
     "@types/node": "26.6.6",
-    "typescript": "5.9.3",
+    "typescript": "7.0.2",
     "vite": "8.3.5"
   }
 }
