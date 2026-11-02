@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Check, Copy, RotateCcw, X } from '@lucide/vue'
+import { Check, Copy, Lock, Pencil, RotateCcw, X } from '@lucide/vue'
 import config from 'virtual:playground/config'
 import PwButton from '../components/PwButton.vue'
 import { toast } from '../components/toast'
@@ -110,8 +110,17 @@ const copy = async (): Promise<void> => {
       </div>
 
       <div class="pw-source__actions">
-        <PwButton v-if="viewer === 'monaco' && !failed" size="sm" variant="text" :title="editing ? '切回只读' : '编辑（改动不会写入磁盘）'" @click="toggleEdit">
-          {{ editing ? '只读' : '编辑' }}
+        <PwButton
+          v-if="viewer === 'monaco' && !failed"
+          size="sm"
+          variant="text"
+          :title="editing ? '切回只读' : '编辑（改动只存在于内存，不会写入磁盘）'"
+          @click="toggleEdit"
+        >
+          <template #icon>
+            <Lock v-if="editing" :size="13" />
+            <Pencil v-else :size="13" />
+          </template>
         </PwButton>
         <PwButton v-if="dirty" size="sm" variant="text" title="还原" @click="reset">
           <template #icon><RotateCcw :size="13" /></template>

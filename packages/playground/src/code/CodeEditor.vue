@@ -57,12 +57,20 @@ onMounted(async () => {
     applyMonacoTheme(monaco, props.theme)
     editor = monaco.editor.create(host.value, options())
     const instance = editor
+
+    // 面板刚展开时容器可能还是 0 高：用 ResizeObserver 等到有尺寸再布局，
+    // 否则模型有内容但一行都不渲染（真踩过）
+    observer = new ResizeObserver(() => {
+      const box = host.value?.getBoundingClientRect()
+      if (!box || box.width === 0 || box.height === 0) return
+      instance.layout()
+    })
+    observer.observe(host.value)
+    requestAnimationFrame(() => instance.layout())
     instance.onDidChangeModelContent(() => {
       if (applying) return
       emit('update:modelValue', instance.getValue())
     })
-    observer = new ResizeObserver(() => editor?.layout())
-    observer.observe(host.value)
   } catch (error) {
     const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
     console.error('[rinova-playground] Monaco 启动失败，已降级为静态高亮：', message)
