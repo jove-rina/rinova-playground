@@ -20,7 +20,8 @@
   },
   "dependencies": {
     "@vue/compiler-sfc": "3.5.44",
-    "jiti": "2.7.0"
+    "jiti": "2.7.0",
+    "vue-component-meta": "3.3.14"
   },
   "peerDependencies": {
     "vite": "^8.0.0"

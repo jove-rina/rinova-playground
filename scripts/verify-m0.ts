@@ -161,6 +161,24 @@ const hashHits = walk(path.join(pkgDir, 'src'), (file) => /\.(ts|vue)$/.test(fil
 )
 record('路由使用 History API（无 hash）', hashHits.length === 0, hashHits.map(rel).join(', '))
 
+/* 11. 契约清单：组件 props 提取 + 未覆盖标记 */
+const manifestPath = path.join(exampleDir, '.playground/manifest.json')
+if (fs.existsSync(manifestPath)) {
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as {
+    components: { name: string; props: { name: string }[]; uncoveredProps: string[] }[]
+  }
+  const button = manifest.components.find((item) => item.name === 'MyButton')
+  const hasProps = Boolean(button && button.props.some((prop) => prop.name === 'size'))
+  const flagsUncovered = Boolean(button?.uncoveredProps.includes('loading'))
+  record(
+    '契约清单提取正确（含未覆盖标记）',
+    hasProps && flagsUncovered,
+    hasProps ? 'MyButton.props 含 size' : '未提取到 MyButton.props',
+  )
+} else {
+  record('契约清单提取正确（含未覆盖标记）', true, '未生成 manifest，跳过')
+}
+
 /* 输出 */
 let failed = 0
 for (const item of results) {

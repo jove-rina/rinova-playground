@@ -24,6 +24,10 @@ export interface PlaygroundConfig {
   base?: string
   /** dev server 端口 */
   port?: number
+  /** 契约清单要扫描的组件 glob（如 src/components 下所有 .vue）；不配则不生成 manifest */
+  components?: string[]
+  /** 组件契约提取用的 tsconfig，默认项目根的 tsconfig.json */
+  tsconfig?: string
 }
 
 export const defineConfig = (config: PlaygroundConfig): PlaygroundConfig => config

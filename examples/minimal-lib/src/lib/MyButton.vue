@@ -4,8 +4,9 @@ withDefaults(
     size?: 'sm' | 'md' | 'lg'
     variant?: 'primary' | 'ghost'
     disabled?: boolean
+    loading?: boolean
   }>(),
-  { size: 'md', variant: 'primary', disabled: false }
+  { size: 'md', variant: 'primary', disabled: false, loading: false }
 )
 </script>
 
@@ -13,9 +14,10 @@ withDefaults(
   <button
     class="my-btn"
     :class="[`my-btn--${size}`, `my-btn--${variant}`]"
-    :disabled="disabled"
+    :disabled="disabled || loading"
     type="button"
   >
+    <span v-if="loading" class="my-btn__spinner" aria-hidden="true" />
     <slot />
   </button>
 </template>
@@ -71,5 +73,20 @@ withDefaults(
 .my-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.my-btn__spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: my-spin 0.7s linear infinite;
+}
+
+@keyframes my-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

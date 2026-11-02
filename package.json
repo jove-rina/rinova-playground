@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@types/node": "26.6.6",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vue-component-meta": "3.3.14"
   }
 }

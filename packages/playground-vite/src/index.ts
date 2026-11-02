@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createJiti } from 'jiti'
 import { parse as parseSfc } from '@vue/compiler-sfc'
+import { buildManifest, writeManifest } from './manifest.js'
 import type { Plugin, ViteDevServer } from 'vite'
 
 const VIRTUAL_CONFIG = 'virtual:playground/config'
@@ -67,6 +68,10 @@ interface PlaygroundUserConfig {
   scenes?: string
   base?: string
   port?: number
+  /** 契约清单要扫描的组件 glob（如 src/components 下所有 .vue）；不配则不生成 manifest */
+  components?: string[]
+  /** 组件提取用的 tsconfig，默认项目根的 tsconfig.json */
+  tsconfig?: string
   [key: string]: unknown
 }
 
@@ -112,6 +117,8 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
   let scenesDir = ''
   let scenes: SceneEntry[] = []
   let configFile = ''
+  let isBuild = false
+  let outDir = 'dist'
 
   const jiti = createJiti(import.meta.url, { interopDefault: true, moduleCache: false })
 
@@ -202,6 +209,31 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
     return entries.sort((a, b) => a.order - b.order || a.rel.localeCompare(b.rel))
   }
 
+  /** 生成契约清单（.playground/manifest.json + llms.txt + coverage.md） */
+  const generateManifest = (): void => {
+    const patterns = config.components
+    if (!Array.isArray(patterns) || !patterns.length || !scenes.length) return
+    try {
+      const manifest = buildManifest({
+        root,
+        patterns,
+        tsconfig: typeof config.tsconfig === 'string' ? config.tsconfig : 'tsconfig.json',
+        scenes,
+      })
+      writeManifest(path.join(root, '.playground'), manifest)
+      const props = manifest.components.reduce((sum, item) => sum + item.props.length, 0)
+      const uncovered = manifest.components.reduce((sum, item) => sum + item.uncoveredProps.length, 0)
+      console.log(
+        `[rinova-playground] 契约清单：${manifest.components.length} 个组件 / ${props} props / 未覆盖 ${uncovered} → .playground/`
+      )
+    } catch (error) {
+      console.warn(
+        '[rinova-playground] 契约清单生成失败（不影响 dev/build）：',
+        error instanceof Error ? error.message : error
+      )
+    }
+  }
+
   const ensureReady = async (): Promise<void> => {
     if (resolved) return
     configFile = findConfigFile()
@@ -278,6 +310,26 @@ ${entries}
 
     configResolved: (viteConfig) => {
       root = viteConfig.root
+      isBuild = viteConfig.command === 'build'
+      outDir = viteConfig.build.outDir
+    },
+
+    /** 契约清单：组件 props/emits/slots → .playground/manifest.json + llms.txt + coverage.md */
+    buildStart: async () => {
+      await ensureReady()
+      generateManifest()
+    },
+
+    /** 构建时把清单一起放进产物 */
+    closeBundle: () => {
+      if (!isBuild) return
+      const source = path.join(root, '.playground')
+      const target = path.resolve(root, outDir)
+      if (!fs.existsSync(source)) return
+      for (const name of ['manifest.json', 'llms.txt', 'coverage.md']) {
+        const from = path.join(source, name)
+        if (fs.existsSync(from)) fs.copyFileSync(from, path.join(target, name))
+      }
     },
 
     resolveId: (id) => (id === VIRTUAL_CONFIG || id === VIRTUAL_SCENES ? RESOLVED_ID[id] : null),
@@ -299,6 +351,24 @@ ${entries}
         if (!isScene && !isConfig) return
         invalidateScenes(server)
         server.ws.send({ type: 'full-reload' })
+      }
+
+      // 组件改动时重算契约清单（防抖，避免每次保存都跑一遍 TS 程序）
+      if (Array.isArray(config.components) && config.components.length) {
+        const roots = new Set(
+          config.components.map((pattern) => path.resolve(root, pattern.split('*')[0] ?? '.'))
+        )
+        for (const dir of roots) server.watcher.add(dir)
+        let timer: NodeJS.Timeout | null = null
+        const scheduleManifest = (file: string): void => {
+          if (!file.endsWith('.vue')) return
+          if (![...roots].some((dir) => file.startsWith(dir))) return
+          if (timer) clearTimeout(timer)
+          timer = setTimeout(() => generateManifest(), 800)
+        }
+        server.watcher.on('change', scheduleManifest)
+        server.watcher.on('add', scheduleManifest)
+        server.watcher.on('unlink', scheduleManifest)
       }
 
       server.watcher.on('add', refresh)

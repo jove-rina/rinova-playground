@@ -115,6 +115,9 @@ importers:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
+      vue-component-meta:
+        specifier: 3.3.14
+        version: 3.3.14(typescript@5.9.3)
 
   examples/minimal-lib:
     dependencies:
@@ -201,6 +204,9 @@ importers:
       jiti:
         specifier: 2.7.0
         version: 2.7.0
+      vue-component-meta:
+        specifier: 3.3.14
+        version: 3.3.14
     devDependencies:
       '@types/node':
         specifier: 26.6.6
@@ -858,6 +864,14 @@ packages:
   vscode-uri@3.2.0:
     resolution: {integrity: sha512-m2gXo3bn0G1kT9InzMf07fTbqMbGtyckj3bH5ktLO+1Ssv+yiATZ4dhwaQv9UZWxJh6E9IFGnQyjgWVDWVBDrg==}
 
+  vue-component-meta@3.3.14:
+    resolution: {integrity: sha512-OQT0AVGbFjmo/aIsyrNN8M3zR3D7U3SNyQPzVlotl89dxIdhhy95wYALiiFrHkBWyvTLRxMRQ3cqkbOMHEh8DQ==}
+    peerDependencies:
+      typescript: '*'
+    peerDependenciesMeta:
+      typescript:
+        optional: true
+
   vue-tsc@3.3.14:
     resolution: {integrity: sha512-URAu2H9AuMZMg9GCgnqbaHHHd8pBZRAwNV2e2yYS8VDsoTVXHiOSo663OS6DkEvauQ2yixn5TPFJ9WV9QIspkA==}
     hasBin: true
@@ -1489,6 +1503,14 @@ snapshots:
   vscode-languageserver-types@3.18.5: {}
 
   vscode-uri@3.2.0: {}
+
+  vue-component-meta@3.3.14(typescript@5.9.3):
+    dependencies:
+      '@volar/typescript': 2.4.30(typescript@5.9.3)
+      '@vue/language-core': 3.3.14
+      path-browserify: 1.0.1
+    optionalDependencies:
+      typescript: 5.9.3
 
   vue-tsc@3.3.14(typescript@5.9.3):
     dependencies:
