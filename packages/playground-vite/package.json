@@ -1,6 +1,6 @@
 {
   "name": "@rinova/playground-vite",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "rinova-playground \u7684 Vite \u63d2\u4ef6\uff1a\u626b\u63cf scenes \u76ee\u5f55\u5e76\u751f\u6210\u865a\u62df\u6a21\u5757",
   "type": "module",
   "license": "MIT",

@@ -60,11 +60,17 @@ export interface ManifestInput {
 
 const toPosix = (value: string): string => value.split(path.sep).join('/')
 
-/** 极简 glob：只支持 `dir/**\/*.vue`、`dir/*.vue`、`dir/name.vue` */
-const globToRegExp = (pattern: string): RegExp => {
+/** 极简 glob：支持 `dir/**\/*.vue`（任意层）、`dir/*.vue`、`dir/name.vue` */
+const DEEP_PLACEHOLDER = '\u0001'
+
+export const globToRegExp = (pattern: string): RegExp => {
   const normalized = toPosix(pattern)
-  const escaped = normalized.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-  const withGlob = escaped.replace(/\*\*\//g, '(?:.*/)?').replace(/\*/g, '[^/]*')
+  const escaped = normalized
+    // 先换成占位符：否则 `**\/` 变成 `(?:.*\/)?` 之后，下面的 `*` 替换会把里面的 `*` 也吃掉
+    .replace(/\*\*\//g, DEEP_PLACEHOLDER)
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '[^/]*')
+  const withGlob = escaped.split(DEEP_PLACEHOLDER).join('(?:.*/)?')
   return new RegExp(`^${withGlob}$`)
 }
 

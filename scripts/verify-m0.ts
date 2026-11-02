@@ -193,6 +193,23 @@ record(
   templateConfig ? '模板 playground.config.ts 声明了 components' : '模板配置文件缺失',
 )
 
+/* 13. 契约清单 glob：`**\/` 必须能匹配任意层目录（真实项目组件常在 Xxx/src/components/ 三层） */
+const { globToRegExp } = await import('../packages/playground-vite/src/manifest.ts')
+const globCases: Array<[pattern: string, file: string, expected: boolean]> = [
+  ['src/components/**/*.vue', 'src/components/A.vue', true],
+  ['src/components/**/*.vue', 'src/components/X/a.vue', true],
+  ['src/components/**/*.vue', 'src/components/X/src/components/a.vue', true],
+  ['src/components/**/*.vue', 'src/scenes/a.vue', false],
+  ['src/components/*.vue', 'src/components/X/a.vue', false],
+  ['src/components/X.vue', 'src/components/X.vue', true],
+]
+const globFails = globCases.filter(([pattern, file, expected]) => globToRegExp(pattern).test(file) !== expected)
+record(
+  '契约清单 glob 支持任意层目录',
+  globFails.length === 0,
+  globFails.length ? globFails.map(([pattern, file]) => `${pattern} ~ ${file}`).join(', ') : `${globCases.length} 条用例`,
+)
+
 /* 输出 */
 let failed = 0
 for (const item of results) {

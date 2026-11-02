@@ -74,7 +74,9 @@ const toggleTheme = () => {
 /* ---------------- 路由（History API） ---------------- */
 
 const basePath = (() => {
-  const raw = config.base ?? '/'
+  // routeBase 只影响场景 URL 前缀，不影响 Vite 的 base（MPA / 多入口部署用）；
+  // 单站部署沿用 base。
+  const raw = config.routeBase ?? config.base ?? '/'
   return raw.endsWith('/') ? raw : `${raw}/`
 })()
 
