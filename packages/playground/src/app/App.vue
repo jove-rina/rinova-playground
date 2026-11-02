@@ -25,8 +25,12 @@ const groups = computed(() => {
     map.set(scene.group, list)
   }
   return [...map.entries()]
-    .map(([name, items]) => ({ name, items }))
-    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(([name, items]) => ({
+      name,
+      items,
+      weight: items.reduce((min, item) => Math.min(min, item.order), Number.MAX_SAFE_INTEGER),
+    }))
+    .sort((a, b) => a.weight - b.weight || a.name.localeCompare(b.name))
 })
 
 const visibleCount = computed(() => scenes.filter((scene) => !scene.hidden).length)

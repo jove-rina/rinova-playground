@@ -12,7 +12,9 @@
     "typecheck": "pnpm -r typecheck",
     "verify": "node --experimental-strip-types scripts/verify-m0.ts",
     "build:create": "pnpm --filter create-rinova-playground build",
-    "build:all": "pnpm -r --filter './packages/*' build"
+    "build:all": "pnpm -r --filter './packages/*' build",
+    "dev:docs": "pnpm --filter @rinova/example-docs dev",
+    "build:docs": "pnpm --filter @rinova/example-docs build"
   },
   "engines": {
     "node": ">=22.12"

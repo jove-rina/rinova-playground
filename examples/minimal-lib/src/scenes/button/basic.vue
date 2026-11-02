@@ -28,7 +28,7 @@ useSceneOutput(() => ({ clicked: count.value, doubled: count.value * 2 }))
 
 <template>
   <div class="demo">
-    <MyButton :size="args.size" :disabled="args.disabled" @click="count++">{{ args.label }}</MyButton>
+    <MyButton :size="args.size" :disabled="args.disabled" @click="count++" icon="star">{{ args.label }}</MyButton>
     <span class="demo__hint">已点击 {{ count }} 次</span>
   </div>
 </template>

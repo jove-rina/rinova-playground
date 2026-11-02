@@ -22,7 +22,15 @@ const size = ref('large')
 
 ## 状态
 
-v0.1 草案阶段，产品文档已就绪，尚未开始实现。
+v0.1.0 功能完成（M0–M3 验收全绿），文档站与两个示例可用；尚未发布到 npm。
+
+```bash
+pnpm install
+pnpm dev        # 示例项目  → http://localhost:5273
+pnpm dev:docs   # 文档站     → http://localhost:5280
+pnpm build      # 构建示例（产物含 manifest.json / llms.txt / coverage.md）
+pnpm verify     # 11 项验收
+```
 
 ## 文档
 
