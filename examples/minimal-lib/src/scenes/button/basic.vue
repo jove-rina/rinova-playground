@@ -12,20 +12,23 @@ export const sceneMeta = defineSceneMeta({
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useScenePayload } from '@rinova/playground'
+import { useSceneArgs, useSceneOutput } from '@rinova/playground'
 import { MyButton } from '../../lib'
 
 const count = ref(0)
 
-useScenePayload({
-  input: () => ({ count: count.value, disabled: false }),
-  output: () => ({ clicked: count.value, doubled: count.value * 2 }),
-})
+// 面板里的表单改这里 → 组件实时重渲染（纯前端，生产环境同样可用）
+const args = useSceneArgs(
+  { label: '点我 +1', size: 'md' as 'sm' | 'md' | 'lg', disabled: false },
+  { options: { size: ['sm', 'md', 'lg'] }, labels: { label: '文案', size: '尺寸', disabled: '禁用' } }
+)
+
+useSceneOutput(() => ({ clicked: count.value, doubled: count.value * 2 }))
 </script>
 
 <template>
   <div class="demo">
-    <MyButton @click="count++">点我 +1</MyButton>
+    <MyButton :size="args.size" :disabled="args.disabled" @click="count++">{{ args.label }}</MyButton>
     <span class="demo__hint">已点击 {{ count }} 次</span>
   </div>
 </template>

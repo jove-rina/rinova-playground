@@ -11,21 +11,23 @@ export const sceneMeta = defineSceneMeta({
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useScenePayload } from '@rinova/playground'
+import { useSceneArgs, useSceneOutput } from '@rinova/playground'
 import { MyButton } from '../../components'
 
 const count = ref(0)
 
-// 注册后工具栏「参数」按钮可点，右侧显示入参 / 出参快照
-useScenePayload({
-  input: () => ({ count: count.value }),
-  output: () => ({ clicked: count.value }),
-})
+// 声明可变入参：工具栏「参数」按钮可点，右侧渲染成表单，改了组件实时变
+const args = useSceneArgs(
+  { label: '点我 +1', size: 'md' as 'sm' | 'md' | 'lg', disabled: false },
+  { options: { size: ['sm', 'md', 'lg'] }, labels: { label: '文案', size: '尺寸', disabled: '禁用' } }
+)
+
+useSceneOutput(() => ({ clicked: count.value }))
 </script>
 
 <template>
   <div class="demo">
-    <MyButton @click="count++">点我 +1</MyButton>
+    <MyButton :size="args.size" :disabled="args.disabled" @click="count++">{{ args.label }}</MyButton>
     <span class="demo__hint">已点击 {{ count }} 次</span>
   </div>
 </template>

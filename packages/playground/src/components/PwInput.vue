@@ -8,8 +8,9 @@ const props = withDefaults(
     clearable?: boolean
     size?: 'sm' | 'md'
     autofocus?: boolean
+    type?: 'text' | 'number'
   }>(),
-  { modelValue: '', clearable: true, size: 'md', autofocus: false }
+  { modelValue: '', clearable: true, size: 'md', autofocus: false, type: 'text' }
 )
 
 const emit = defineEmits<{
@@ -39,7 +40,7 @@ defineExpose({ focus: () => inputRef.value?.focus() })
     <input
       ref="inputRef"
       class="pw-input__field"
-      type="text"
+      :type="type"
       :value="modelValue"
       :placeholder="placeholder"
       :autofocus="autofocus"

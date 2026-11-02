@@ -3,9 +3,10 @@ import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'v
 import config from 'virtual:playground/config'
 import { scenes } from 'virtual:playground/scenes'
 import PwToastHost from '../components/PwToastHost.vue'
-import { currentPayload } from '../payload/registry'
+import { currentArgs } from '../payload/args'
+import { currentOutput } from '../payload/output'
 import '../styles/theme.less'
-import PlaygroundPayloadPanel from './PlaygroundPayloadPanel.vue'
+import PlaygroundParamsPanel from './PlaygroundParamsPanel.vue'
 import PlaygroundSidebar from './PlaygroundSidebar.vue'
 import PlaygroundSourcePanel from './PlaygroundSourcePanel.vue'
 import PlaygroundStage from './PlaygroundStage.vue'
@@ -34,7 +35,7 @@ const activeScene = computed(() => scenes.find((scene) => scene.id === activeId.
 
 const showCode = ref(false)
 const showPayload = ref(false)
-const hasPayload = computed(() => currentPayload.value !== null)
+const hasPayload = computed(() => currentArgs.value !== null || currentOutput.value !== null)
 
 watch(hasPayload, (value) => {
   if (!value) showPayload.value = false
@@ -168,7 +169,7 @@ onBeforeUnmount(() => {
       <div class="pw-body">
         <PlaygroundStage v-if="activeScene" :scene="activeScene" :width="width" />
         <div v-else class="pw-empty">没有找到任何场景，请在 scenes 目录下新建 .vue 文件。</div>
-        <PlaygroundPayloadPanel v-if="showPayload && hasPayload" :theme="theme" />
+        <PlaygroundParamsPanel v-if="showPayload && hasPayload" :theme="theme" />
       </div>
 
       <div v-if="showCode && activeScene" class="pw-source-slot">

@@ -41,18 +41,22 @@ export const sceneMeta = defineSceneMeta({
 
 ## 入参 / 出参面板
 
-在场景的 `<script setup>` 里调用 `useScenePayload`，工具栏「参数」按钮就会启用：
+在场景的 `<script setup>` 里声明，工具栏「参数」按钮就会启用：
 
 ```ts
-import { useScenePayload } from '@rinova/playground'
+import { useSceneArgs, useSceneOutput } from '@rinova/playground'
 
-useScenePayload({
-  input: () => ({ count: count.value }),
-  output: () => ({ clicked: count.value }),
-})
+// 入参：面板渲染成表单，改了组件立刻变（生产环境同样可用）
+const args = useSceneArgs(
+  { label: '点我', size: 'md' as 'sm' | 'md' | 'lg', disabled: false },
+  { options: { size: ['sm', 'md', 'lg'] }, labels: { label: '文案', size: '尺寸', disabled: '禁用' } }
+)
+
+// 出参：面板每 400ms 取一次快照
+useSceneOutput(() => ({ clicked: count.value }))
 ```
 
-面板每 400ms 取一次快照，返回任意可 JSON 序列化的对象即可。
+表单控件按值的类型自动选择：布尔 → 开关、数字 → 数字框、字符串 → 文本框、带 `options` → 下拉框。
 
 ## 目录
 
