@@ -5,7 +5,6 @@ withDefaults(
     variant?: 'primary' | 'ghost'
     disabled?: boolean
     loading?: boolean
-    icon?: string
   }>(),
   { size: 'md', variant: 'primary', disabled: false, loading: false }
 )

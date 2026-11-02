@@ -14,7 +14,9 @@
     "build:create": "pnpm --filter create-rinova-playground build",
     "build:all": "pnpm -r --filter './packages/*' build",
     "dev:docs": "pnpm --filter @rinova/example-docs dev",
-    "build:docs": "pnpm --filter @rinova/example-docs build"
+    "build:docs": "pnpm --filter @rinova/example-docs build",
+    "mcp": "node packages/playground-mcp/dist/index.js --project examples/minimal-lib",
+    "verify:mcp": "node --experimental-strip-types scripts/probe-mcp.ts"
   },
   "engines": {
     "node": ">=22.12"

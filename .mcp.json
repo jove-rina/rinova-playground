@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "rinova-playground": {
+      "command": "node",
+      "args": [
+        "packages/playground-mcp/dist/index.js",
+        "--project",
+        "examples/minimal-lib"
+      ]
+    }
+  }
+}

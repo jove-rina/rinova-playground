@@ -1,0 +1,30 @@
+{
+  "name": "@rinova/playground-mcp",
+  "version": "0.1.0",
+  "description": "rinova-playground 的 MCP server：把契约清单暴露给 AI 编码工具",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jove-rina/rinova-playground"
+  },
+  "bin": {
+    "rinova-playground-mcp": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "typescript": "5.9.3"
+  }
+}

@@ -30,7 +30,12 @@ pnpm dev        # 示例项目  → http://localhost:5273
 pnpm dev:docs   # 文档站     → http://localhost:5280
 pnpm build      # 构建示例（产物含 manifest.json / llms.txt / coverage.md）
 pnpm verify     # 11 项验收
+pnpm verify:mcp # MCP server 冒烟（7 项）
 ```
+
+## MCP
+
+`@rinova/playground-mcp` 把契约清单挂给 Claude Code / Cursor，提供 `capability_search`、`capability_get`、`scenario_list`、`coverage_report` 四个只读工具。仓库根的 `.mcp.json` 已配好，客户端打开本仓库即可直接用。
 
 ## 文档
 
