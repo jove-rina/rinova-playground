@@ -1,0 +1,13 @@
+// 共享变量与 mixin，只通过 `@import (reference)` 引入，自身不产出选择器。
+@pw-ease: 0.15s ease;
+@pw-radius-sm: ~'calc(var(--rp-radius) - 3px)';
+@pw-radius-md: ~'calc(var(--rp-radius) - 2px)';
+
+.pw-transition() {
+  transition: background-color @pw-ease, border-color @pw-ease, color @pw-ease;
+}
+
+.pw-focus-ring(@offset: 1px) {
+  outline: 2px solid color-mix(in srgb, var(--rp-color-primary) 55%, transparent);
+  outline-offset: @offset;
+}

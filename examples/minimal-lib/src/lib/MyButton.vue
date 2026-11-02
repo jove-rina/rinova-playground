@@ -20,7 +20,7 @@ withDefaults(
   </button>
 </template>
 
-<style scoped>
+<style scoped lang="less">
 .my-btn {
   display: inline-flex;
   align-items: center;

@@ -21,11 +21,11 @@ const emit = defineEmits<{
 
 const inputRef = ref<HTMLInputElement>()
 
-function onInput(event: Event) {
+const onInput = (event: Event) => {
   emit('update:modelValue', (event.target as HTMLInputElement).value)
 }
 
-function clear() {
+const clear = () => {
   emit('update:modelValue', '')
   inputRef.value?.focus()
 }
@@ -61,7 +61,9 @@ defineExpose({ focus: () => inputRef.value?.focus() })
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="less">
+@import (reference) '../styles/mixins.less';
+
 .pw-input {
   display: flex;
   align-items: center;

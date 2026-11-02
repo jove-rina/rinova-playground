@@ -25,7 +25,7 @@ const current = ref<(typeof sizes)[number]>('md')
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="less">
 .demo {
   display: flex;
   flex-direction: column;

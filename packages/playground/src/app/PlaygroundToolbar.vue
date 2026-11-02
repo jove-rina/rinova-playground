@@ -63,7 +63,9 @@ const widths = [
   </header>
 </template>
 
-<style scoped>
+<style scoped lang="less">
+@import (reference) '../styles/mixins.less';
+
 .pw-toolbar {
   display: flex;
   align-items: center;
@@ -140,7 +142,6 @@ const widths = [
 }
 
 .pw-width-btn:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--rp-color-primary) 55%, transparent);
-  outline-offset: -1px;
+  .pw-focus-ring(-1px);
 }
 </style>

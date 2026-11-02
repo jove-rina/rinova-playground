@@ -13,7 +13,7 @@ export const toastState = reactive<ToastItem[]>([])
 let seed = 0
 
 /** 轻提示。用法：toast('已复制'), toast('保存失败', 'error') */
-export function toast(text: string, type: ToastType = 'info', duration = 2400): void {
+export const toast = (text: string, type: ToastType = 'info', duration = 2400): void => {
   const id = ++seed
   toastState.push({ id, text, type })
   window.setTimeout(() => {

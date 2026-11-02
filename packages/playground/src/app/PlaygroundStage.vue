@@ -42,7 +42,9 @@ watch(
   </section>
 </template>
 
-<style scoped>
+<style scoped lang="less">
+@import (reference) '../styles/mixins.less';
+
 .pw-stage {
   flex: 1;
   min-height: 0;

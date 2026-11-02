@@ -19,7 +19,7 @@ const CONFIG_FILES = [
 const DEFAULT_SCENES_DIR = 'src/scenes'
 
 /** `size-large` → `Size Large`；含中文时原样返回 */
-function titleize(name) {
+const titleize = (name) => {
   if (/[\u3400-\u9fff]/.test(name)) return name
   return name
     .replace(/[-_]+/g, ' ')
@@ -28,11 +28,11 @@ function titleize(name) {
     .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
-function toPosix(value) {
+const toPosix = (value) => {
   return value.split(path.sep).join('/')
 }
 
-function walkScenes(dir, prefix = '') {
+const walkScenes = (dir, prefix = '') => {
   /** @type {{ abs: string, rel: string }[]} */
   const out = []
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -53,7 +53,7 @@ function walkScenes(dir, prefix = '') {
  *
  * @param {{ configFile?: string, scenes?: string }} [options]
  */
-export function playground(options = {}) {
+export const playground = (options = {}) => {
   let root = process.cwd()
   let config = {}
   let resolved = false
@@ -63,7 +63,7 @@ export function playground(options = {}) {
 
   const jiti = createJiti(import.meta.url, { interopDefault: true, moduleCache: false })
 
-  function findConfigFile() {
+  const findConfigFile = () => {
     if (options.configFile) return path.resolve(root, options.configFile)
     for (const name of CONFIG_FILES) {
       const file = path.join(root, name)
@@ -72,7 +72,7 @@ export function playground(options = {}) {
     return ''
   }
 
-  function scanScenes() {
+  const scanScenes = () => {
     if (!fs.existsSync(scenesDir)) return []
 
     return walkScenes(scenesDir)
@@ -96,7 +96,7 @@ export function playground(options = {}) {
       .sort((a, b) => a.order.localeCompare(b.order))
   }
 
-  async function ensureReady() {
+  const ensureReady = async () => {
     if (resolved) return
     configFile = findConfigFile()
     config = configFile ? ((await jiti.import(configFile)).default ?? {}) : {}
@@ -105,7 +105,7 @@ export function playground(options = {}) {
     resolved = true
   }
 
-  function invalidateScenes(server) {
+  const invalidateScenes = (server) => {
     resolved = false
     const mod = server.moduleGraph.getModuleById(RESOLVED_ID[VIRTUAL_SCENES])
     if (mod) server.moduleGraph.invalidateModule(mod)
@@ -113,12 +113,12 @@ export function playground(options = {}) {
     if (configMod) server.moduleGraph.invalidateModule(configMod)
   }
 
-  function configModuleCode() {
+  const configModuleCode = () => {
     const payload = { ...config, sceneCount: scenes.length }
     return `export default ${JSON.stringify(payload)}`
   }
 
-  function scenesModuleCode() {
+  const scenesModuleCode = () => {
     const entries = scenes
       .map(
         (scene) => `  {
@@ -145,22 +145,22 @@ ${entries}
     name: 'rinova-playground',
     enforce: 'pre',
 
-    configResolved(viteConfig) {
+    configResolved: (viteConfig) => {
       root = viteConfig.root
     },
 
-    resolveId(id) {
+    resolveId: (id) => {
       if (id === VIRTUAL_CONFIG || id === VIRTUAL_SCENES) return RESOLVED_ID[id]
       return null
     },
 
-    async load(id) {
+    load: async (id) => {
       if (id !== RESOLVED_ID[VIRTUAL_CONFIG] && id !== RESOLVED_ID[VIRTUAL_SCENES]) return null
       await ensureReady()
       return id === RESOLVED_ID[VIRTUAL_CONFIG] ? configModuleCode() : scenesModuleCode()
     },
 
-    async configureServer(server) {
+    configureServer: async (server) => {
       await ensureReady()
       server.watcher.add(scenesDir)
 

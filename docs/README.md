@@ -30,6 +30,8 @@
 | D6 | Monaco 只保留 `editor` + `ts` 两个 worker，懒加载，并提供 `codeViewer` 开关 | 04 |
 | D7 | v0.1 全部代码在本仓库重新实现，不迁移旧项目代码 | 05 |
 | D8 | 运行时与插件使用 `@rinova` scope：`@rinova/playground` / `@rinova/playground-vite` / `@rinova/playground-mcp`；脚手架为 `create-rinova-playground`（npm 的 `create-*` 约定，不带 scope），创建命令 `pnpm create rinova-playground` | 本页 |
+| D9 | 样式统一用 Less（`<style lang="less">` + `styles/mixins.less` 共享变量与 mixin），不写裸 CSS | 04 |
+| D10 | 代码只允许箭头函数，禁止 `function` 声明（验收脚本强制） | 04 |
 
 ## 包结构
 

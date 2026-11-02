@@ -20,7 +20,7 @@ defineProps<{
   </article>
 </template>
 
-<style scoped>
+<style scoped lang="less">
 .my-card {
   width: 360px;
   max-width: 100%;

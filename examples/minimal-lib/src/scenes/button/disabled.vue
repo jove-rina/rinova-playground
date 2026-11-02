@@ -9,7 +9,7 @@ import { MyButton } from '../../lib'
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="less">
 .demo {
   display: flex;
   gap: 12px;

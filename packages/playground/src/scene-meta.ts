@@ -21,6 +21,4 @@ export interface SceneMeta {
   hideInNav?: boolean
 }
 
-export function defineSceneMeta(meta: SceneMeta): SceneMeta {
-  return meta
-}
+export const defineSceneMeta = (meta: SceneMeta): SceneMeta => meta

@@ -16,7 +16,7 @@ defineEmits<{ select: [id: string] }>()
 const query = ref('')
 const inputRef = ref<InstanceType<typeof PwInput> | null>(null)
 
-function focusSearch() {
+const focusSearch = () => {
   inputRef.value?.focus()
 }
 
@@ -76,7 +76,9 @@ const filteredGroups = computed(() => {
   </aside>
 </template>
 
-<style scoped>
+<style scoped lang="less">
+@import (reference) '../styles/mixins.less';
+
 .pw-sidebar {
   display: flex;
   flex-direction: column;
@@ -181,8 +183,7 @@ const filteredGroups = computed(() => {
 }
 
 .pw-nav-item:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--rp-color-primary) 55%, transparent);
-  outline-offset: -2px;
+  .pw-focus-ring(-2px);
 }
 
 .pw-sidebar__empty {

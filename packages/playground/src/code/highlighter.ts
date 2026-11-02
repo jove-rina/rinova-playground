@@ -10,7 +10,7 @@ let highlighterPromise: Promise<HighlighterCore> | null = null
 export const PW_THEME_LIGHT = 'vitesse-light'
 export const PW_THEME_DARK = 'vitesse-dark'
 
-export function getHighlighter(): Promise<HighlighterCore> {
+export const getHighlighter = (): Promise<HighlighterCore> => {
   highlighterPromise ??= createHighlighterCore({
     themes: [import('@shikijs/themes/vitesse-light'), import('@shikijs/themes/vitesse-dark')],
     langs: [

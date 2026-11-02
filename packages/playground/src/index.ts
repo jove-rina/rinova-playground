@@ -21,7 +21,7 @@ export interface CreatePlaygroundOptions {
  * createPlayground()
  * ```
  */
-export async function createPlayground(options: CreatePlaygroundOptions = {}): Promise<void> {
+export const createPlayground = async (options: CreatePlaygroundOptions = {}): Promise<void> => {
   const target =
     typeof options.el === 'string'
       ? document.querySelector(options.el)

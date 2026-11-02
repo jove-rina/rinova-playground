@@ -6,8 +6,8 @@ const FOCUSABLE =
 /**
  * 把 Tab 焦点限制在容器内。`active` 变为 false 时解除。
  */
-export function useFocusTrap(container: Ref<HTMLElement | null>, active: Ref<boolean>) {
-  function onKeydown(event: KeyboardEvent) {
+export const useFocusTrap = (container: Ref<HTMLElement | null>, active: Ref<boolean>) => {
+  const onKeydown = (event: KeyboardEvent) => {
     if (event.key !== 'Tab' || !container.value) return
 
     const nodes = Array.from(container.value.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
@@ -27,11 +27,11 @@ export function useFocusTrap(container: Ref<HTMLElement | null>, active: Ref<boo
     }
   }
 
-  function bind() {
+  const bind = () => {
     document.addEventListener('keydown', onKeydown, true)
   }
 
-  function unbind() {
+  const unbind = () => {
     document.removeEventListener('keydown', onKeydown, true)
   }
 

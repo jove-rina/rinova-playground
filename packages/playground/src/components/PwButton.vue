@@ -25,7 +25,9 @@ withDefaults(
   </button>
 </template>
 
-<style scoped>
+<style scoped lang="less">
+@import (reference) '../styles/mixins.less';
+
 .pw-btn {
   display: inline-flex;
   align-items: center;
@@ -38,7 +40,7 @@ withDefaults(
   font: inherit;
   cursor: pointer;
   white-space: nowrap;
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  .pw-transition();
 }
 
 .pw-btn--sm {
@@ -84,8 +86,7 @@ withDefaults(
 }
 
 .pw-btn:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--rp-color-primary) 55%, transparent);
-  outline-offset: 1px;
+  .pw-focus-ring();
 }
 
 .pw-btn__label {

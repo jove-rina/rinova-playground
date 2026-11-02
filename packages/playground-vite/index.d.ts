@@ -7,6 +7,6 @@ export interface PlaygroundPluginOptions {
   scenes?: string
 }
 
-export declare function playground(options?: PlaygroundPluginOptions): Plugin
+export declare const playground: (options?: PlaygroundPluginOptions) => Plugin
 
 export default playground

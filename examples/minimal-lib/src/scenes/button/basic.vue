@@ -12,7 +12,7 @@ const count = ref(0)
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="less">
 .demo {
   display: flex;
   align-items: center;

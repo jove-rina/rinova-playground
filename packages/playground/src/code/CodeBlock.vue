@@ -37,7 +37,9 @@ watch(
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="less">
+@import (reference) '../styles/mixins.less';
+
 .pw-code {
   height: 100%;
   overflow: auto;

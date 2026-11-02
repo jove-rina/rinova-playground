@@ -15,7 +15,7 @@ import { MyButton, MyCard } from '../../lib'
   </MyCard>
 </template>
 
-<style scoped>
+<style scoped lang="less">
 .demo__footer {
   display: flex;
   justify-content: flex-end;

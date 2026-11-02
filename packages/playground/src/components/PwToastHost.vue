@@ -19,7 +19,9 @@ import { toastState } from './toast'
   </Teleport>
 </template>
 
-<style scoped>
+<style scoped lang="less">
+@import (reference) '../styles/mixins.less';
+
 .pw-toast-host {
   position: fixed;
   left: 50%;

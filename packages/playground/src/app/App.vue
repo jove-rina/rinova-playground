@@ -7,7 +7,7 @@ import PwButton from '../components/PwButton.vue'
 import PwToastHost from '../components/PwToastHost.vue'
 import { toast } from '../components/toast'
 import CodeBlock from '../code/CodeBlock.vue'
-import '../styles/theme.css'
+import '../styles/theme.less'
 import PlaygroundSidebar from './PlaygroundSidebar.vue'
 import PlaygroundStage from './PlaygroundStage.vue'
 import PlaygroundToolbar from './PlaygroundToolbar.vue'
@@ -39,7 +39,7 @@ const width = ref<'auto' | 'tablet' | 'mobile'>('auto')
 
 type Preference = 'light' | 'dark' | 'auto'
 
-function readStoredTheme(): Preference | null {
+const readStoredTheme = (): Preference | null => {
   const value = localStorage.getItem(STORAGE_KEY)
   return value === 'light' || value === 'dark' ? value : null
 }
@@ -54,7 +54,7 @@ watchEffect(() => {
   document.documentElement.dataset.pwTheme = theme.value
 })
 
-function toggleTheme() {
+const toggleTheme = () => {
   preference.value = theme.value === 'dark' ? 'light' : 'dark'
   localStorage.setItem(STORAGE_KEY, preference.value)
 }
@@ -80,7 +80,7 @@ watch(
   { immediate: true }
 )
 
-async function copySource() {
+const copySource = async () => {
   try {
     await navigator.clipboard.writeText(source.value)
     copied.value = true
@@ -93,7 +93,7 @@ async function copySource() {
 
 /* ---------------- 路由 ---------------- */
 
-function readHash() {
+const readHash = () => {
   const raw = decodeURIComponent(window.location.hash.replace(/^#\/?/, ''))
   if (raw && scenes.some((scene) => scene.id === raw)) activeId.value = raw
 }
@@ -106,7 +106,7 @@ watch(activeId, (id) => {
 
 /* ---------------- 快捷键 ---------------- */
 
-function onKeydown(event: KeyboardEvent) {
+const onKeydown = (event: KeyboardEvent) => {
   const meta = event.metaKey || event.ctrlKey
   if (meta && event.key.toLowerCase() === 'k') {
     event.preventDefault()
@@ -126,7 +126,7 @@ function onKeydown(event: KeyboardEvent) {
 
 const media = window.matchMedia('(prefers-color-scheme: dark)')
 
-function onMediaChange(event: MediaQueryListEvent) {
+const onMediaChange = (event: MediaQueryListEvent) => {
   systemDark.value = event.matches
 }
 
@@ -209,7 +209,9 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="less">
+@import (reference) '../styles/mixins.less';
+
 .pw-app {
   display: flex;
   height: 100vh;

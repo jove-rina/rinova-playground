@@ -26,6 +26,4 @@ export interface PlaygroundConfig {
   port?: number
 }
 
-export function defineConfig(config: PlaygroundConfig): PlaygroundConfig {
-  return config
-}
+export const defineConfig = (config: PlaygroundConfig): PlaygroundConfig => config
