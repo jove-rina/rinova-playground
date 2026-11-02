@@ -29,3 +29,17 @@
 | D5 | 完整代码展示使用代码编辑器：`monaco-editor@0.57` + `@shikijs/monaco` | 04 |
 | D6 | Monaco 只保留 `editor` + `ts` 两个 worker，懒加载，并提供 `codeViewer` 开关 | 04 |
 | D7 | v0.1 全部代码在本仓库重新实现，不迁移旧项目代码 | 05 |
+| D8 | 包名不带 npm scope：`rinova-playground` / `rinova-playground-vite` / `create-rinova-playground` / `rinova-playground-mcp`；创建命令为 `pnpm create rinova-playground` | 本页 |
+
+## 包结构
+
+```
+rinova-playground/                  # 仓库根
+├── packages/
+│   ├── rinova-playground/          # 运行时（外壳、场景、代码区、面板、主题）
+│   ├── rinova-playground-vite/     # Vite 插件（扫描 scenes → 虚拟模块 + manifest）
+│   ├── create-rinova-playground/   # 脚手架：pnpm create rinova-playground
+│   └── rinova-playground-mcp/      # 可选，M5
+├── examples/                       # minimal-lib / real-lib
+└── docs/                           # 文档站（自己搭自己）
+```
