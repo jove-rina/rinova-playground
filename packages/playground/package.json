@@ -6,14 +6,14 @@
   "license": "MIT",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/types/index.d.ts",
+      "default": "./dist/index.js"
     },
-    "./styles": "./src/styles/theme.less",
+    "./style.css": "./dist/style.css",
     "./package.json": "./package.json"
   },
   "files": [
-    "src"
+    "dist"
   ],
   "peerDependencies": {
     "vue": "^3.5.0"
@@ -25,11 +25,15 @@
     "shiki": "4.6.0"
   },
   "scripts": {
+    "build": "vue-tsc --noEmit -p tsconfig.build.json && vite build && vue-tsc -p tsconfig.types.json && node --experimental-strip-types scripts/finalize-types.ts",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.10",
+    "less": "4.9.1",
     "typescript": "5.9.3",
     "vite": "8.3.5",
+    "vue": "3.5.44",
     "vue-tsc": "3.3.14"
   }
 }

@@ -35,6 +35,7 @@
 | D11 | 框架代码只写 TypeScript，不留 JS 源码；`@rinova/playground-vite` 由 `tsc` 构建出 dist + d.ts | 04 |
 | D12 | 全仓统一 `typescript@5.9.3`（唯一版本），不用 TS 7 —— 以能用最新稳定 `vue-tsc` 为准 | 04 / 06 |
 | D13 | 路由用 History API（`/button/size`），不用 hash；不引入 `vue-router` | 02 |
+| D14 | 运行时包构建为 `dist/`（ESM + `style.css` + `.d.ts`），使用方 `import '@rinova/playground/style.css'`；构建只需 `less`，使用方不需要 | 04 |
 
 ## 包结构
 

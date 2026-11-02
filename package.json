@@ -10,7 +10,9 @@
     "build": "pnpm build:plugin && pnpm --filter @rinova/example-minimal-lib build",
     "preview": "pnpm --filter @rinova/example-minimal-lib preview",
     "typecheck": "pnpm -r typecheck",
-    "verify": "node --experimental-strip-types scripts/verify-m0.ts"
+    "verify": "node --experimental-strip-types scripts/verify-m0.ts",
+    "build:create": "pnpm --filter create-rinova-playground build",
+    "build:all": "pnpm -r --filter './packages/*' build"
   },
   "engines": {
     "node": ">=22.12"
