@@ -111,8 +111,14 @@ try {
     same,
     same ? `${diskScenes.length} 个` : `磁盘 ${diskScenes.join(',')} / 运行时 ${runtimeScenes.join(',')}`
   )
+  record(
+    'sceneMeta 生效（标题/排序/隐藏）',
+    code.includes('按钮 · 基础用法') && /order: 1,/.test(code) && /hidden: true/.test(code),
+    code.includes('按钮 · 基础用法') ? '已解析 title / order / hidden' : '未在虚拟模块里找到 sceneMeta 字段'
+  )
 } catch {
   record('侧栏场景与磁盘一致', true, 'dev server 未运行，跳过')
+  record('sceneMeta 生效（标题/排序/隐藏）', true, 'dev server 未运行，跳过')
 }
 
 /* 6. 不允许 function 声明，一律箭头函数（只扫产品代码，不扫本脚本） */

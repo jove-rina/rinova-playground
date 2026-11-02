@@ -1,3 +1,14 @@
+<script lang="ts">
+import { defineSceneMeta } from '@rinova/playground'
+
+export const sceneMeta = defineSceneMeta({
+  title: '按钮 · 尺寸切换',
+  order: 2,
+  tags: ['size', 'props'],
+  description: '同一按钮在 sm / md / lg 三档尺寸下的表现。',
+})
+</script>
+
 <script setup lang="ts">
 import { ref } from 'vue'
 import { MyButton } from '../../lib'

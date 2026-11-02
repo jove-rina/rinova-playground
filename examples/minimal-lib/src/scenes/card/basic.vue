@@ -1,3 +1,14 @@
+<script lang="ts">
+import { defineSceneMeta } from '@rinova/playground'
+
+export const sceneMeta = defineSceneMeta({
+  title: '卡片 · 基础用法',
+  order: 3,
+  tags: ['slot'],
+  description: '带标题、描述与 footer 插槽的卡片。',
+})
+</script>
+
 <script setup lang="ts">
 import { MyButton, MyCard } from '../../lib'
 </script>

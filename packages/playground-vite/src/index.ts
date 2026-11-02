@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { createJiti } from 'jiti'
+import { parse as parseSfc } from '@vue/compiler-sfc'
 import type { Plugin, ViteDevServer } from 'vite'
 
 const VIRTUAL_CONFIG = 'virtual:playground/config'
@@ -32,6 +33,14 @@ interface ScannedFile {
   rel: string
 }
 
+interface SceneMeta {
+  title?: string
+  order?: number
+  tags?: string[]
+  description?: string
+  hideInNav?: boolean
+}
+
 interface SceneEntry {
   id: string
   title: string
@@ -42,7 +51,12 @@ interface SceneEntry {
   file: string
   /** 相对项目根的路径，如 `src/scenes/button/basic.vue` */
   rel: string
-  order: string
+  /** 同层排序权重，缺省排到最后 */
+  order: number
+  tags?: string[]
+  description?: string
+  /** sceneMeta.hideInNav：不进侧栏但可直接访问 */
+  hidden?: boolean
 }
 
 interface PlaygroundUserConfig {
@@ -107,27 +121,67 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
     return ''
   }
 
-  const scanScenes = (): SceneEntry[] => {
+  /** 执行场景 `<script>` 块里的 `export const sceneMeta`，只取可序列化的导航字段 */
+  const readSceneMeta = async (file: string): Promise<SceneMeta> => {
+    let source = ''
+    try {
+      source = fs.readFileSync(file, 'utf8')
+    } catch {
+      return {}
+    }
+
+    const { descriptor } = parseSfc(source, { filename: file })
+    const block = descriptor.script?.content
+    if (!block || !block.includes('sceneMeta')) return {}
+
+    try {
+      const mod = (await jiti.evalModule(block, { filename: file, async: true })) as {
+        sceneMeta?: SceneMeta
+      }
+      const meta = mod?.sceneMeta ?? {}
+      return {
+        title: typeof meta.title === 'string' ? meta.title : undefined,
+        order: typeof meta.order === 'number' ? meta.order : undefined,
+        tags: Array.isArray(meta.tags) ? meta.tags.map(String) : undefined,
+        description: typeof meta.description === 'string' ? meta.description : undefined,
+        hideInNav: meta.hideInNav === true ? true : undefined,
+      }
+    } catch (error) {
+      console.warn(
+        `[rinova-playground] ${toPosix(path.relative(root, file))} 的 sceneMeta 解析失败，回退文件名：`,
+        error instanceof Error ? error.message : error
+      )
+      return {}
+    }
+  }
+
+  const scanScenes = async (): Promise<SceneEntry[]> => {
     if (!fs.existsSync(scenesDir)) return []
 
-    return walkScenes(scenesDir)
-      .map(({ abs, rel }) => {
-        const id = rel.replace(/\.vue$/, '')
-        const segments = id.split('/')
-        const groupRaw = segments.length > 1 ? (segments[0] as string) : ''
-        const nameRaw = segments.at(-1) as string
+    const entries: SceneEntry[] = []
+    for (const { abs, rel } of walkScenes(scenesDir)) {
+      const id = rel.replace(/\.vue$/, '')
+      const segments = id.split('/')
+      const groupRaw = segments.length > 1 ? (segments[0] as string) : ''
+      const nameRaw = segments.at(-1) as string
+      const meta = await readSceneMeta(abs)
+      const relPath = toPosix(path.relative(root, abs))
 
-        return {
-          id,
-          title: titleize(nameRaw),
-          group: groupRaw ? titleize(groupRaw) : 'Scenes',
-          url: `/${toPosix(path.relative(root, abs))}`,
-          file: abs,
-          rel: toPosix(path.relative(root, abs)),
-          order: id,
-        }
+      entries.push({
+        id,
+        title: meta.title ?? titleize(nameRaw),
+        group: groupRaw ? titleize(groupRaw) : 'Scenes',
+        url: `/${relPath}`,
+        file: abs,
+        rel: relPath,
+        order: typeof meta.order === 'number' ? meta.order : Number.MAX_SAFE_INTEGER,
+        tags: meta.tags,
+        description: meta.description,
+        hidden: meta.hideInNav,
       })
-      .sort((a, b) => a.order.localeCompare(b.order))
+    }
+
+    return entries.sort((a, b) => a.order - b.order || a.rel.localeCompare(b.rel))
   }
 
   const ensureReady = async (): Promise<void> => {
@@ -140,7 +194,7 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
       config = {}
     }
     scenesDir = path.resolve(root, options.scenes ?? config.scenes ?? DEFAULT_SCENES_DIR)
-    scenes = scanScenes()
+    scenes = await scanScenes()
     resolved = true
   }
 
@@ -168,6 +222,10 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
     file: ${JSON.stringify(scene.file)},
     rel: ${JSON.stringify(scene.rel)},
     lang: 'vue',
+    order: ${JSON.stringify(scene.order)},
+    tags: ${JSON.stringify(scene.tags ?? null)},
+    description: ${JSON.stringify(scene.description ?? null)},
+    hidden: ${JSON.stringify(scene.hidden === true)},
     load: () => import(${JSON.stringify(scene.url)}),
     raw: () => import(${JSON.stringify(`${scene.url}?raw`)}).then((mod) => mod.default)
   }`

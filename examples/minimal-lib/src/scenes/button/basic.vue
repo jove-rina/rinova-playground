@@ -1,3 +1,14 @@
+<script lang="ts">
+import { defineSceneMeta } from '@rinova/playground'
+
+export const sceneMeta = defineSceneMeta({
+  title: '按钮 · 基础用法',
+  order: 1,
+  tags: ['基础', 'click'],
+  description: '点击按钮累加计数，用来验证事件透传与响应式更新。',
+})
+</script>
+
 <script setup lang="ts">
 import { ref } from 'vue'
 import { MyButton } from '../../lib'

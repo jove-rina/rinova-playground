@@ -19,6 +19,7 @@ const title = config.title ?? 'Playground'
 const groups = computed(() => {
   const map = new Map<string, SceneDescriptor[]>()
   for (const scene of scenes) {
+    if (scene.hidden) continue
     const list = map.get(scene.group) ?? []
     list.push(scene)
     map.set(scene.group, list)
@@ -28,7 +29,8 @@ const groups = computed(() => {
     .sort((a, b) => a.name.localeCompare(b.name))
 })
 
-const activeId = ref(scenes[0]?.id ?? '')
+const visibleCount = computed(() => scenes.filter((scene) => !scene.hidden).length)
+const activeId = ref(scenes.find((scene) => !scene.hidden)?.id ?? scenes[0]?.id ?? '')
 const activeScene = computed(() => scenes.find((scene) => scene.id === activeId.value) ?? scenes[0])
 
 const showCode = ref(false)
@@ -170,7 +172,7 @@ onBeforeUnmount(() => {
       :title="title"
       :groups="groups"
       :active-id="activeId"
-      :scene-count="scenes.length"
+      :scene-count="visibleCount"
       @select="activeId = $event"
     />
 

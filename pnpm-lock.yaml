@@ -174,6 +174,9 @@ importers:
 
   packages/playground-vite:
     dependencies:
+      '@vue/compiler-sfc':
+        specifier: 3.5.44
+        version: 3.5.44
       jiti:
         specifier: 2.7.0
         version: 2.7.0

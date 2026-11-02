@@ -30,14 +30,17 @@ watch(
 
 <template>
   <section class="pw-stage" :class="`pw-stage--${width}`">
-    <div class="pw-stage__inner">
-      <p v-if="error" class="pw-stage__error">
-        <strong>场景加载失败</strong>
-        <code>{{ scene.rel }}</code>
-        <span>{{ error }}</span>
-      </p>
-      <component :is="comp" v-else-if="comp" :key="scene.id" />
-      <span v-else class="pw-stage__loading">加载中…</span>
+    <div class="pw-stage__frame">
+      <p v-if="scene.description" class="pw-stage__desc">{{ scene.description }}</p>
+      <div class="pw-stage__inner">
+        <p v-if="error" class="pw-stage__error">
+          <strong>场景加载失败</strong>
+          <code>{{ scene.rel }}</code>
+          <span>{{ error }}</span>
+        </p>
+        <component :is="comp" v-else-if="comp" :key="scene.id" />
+        <span v-else class="pw-stage__loading">加载中…</span>
+      </div>
     </div>
   </section>
 </template>
@@ -53,24 +56,33 @@ watch(
   padding: 24px;
 }
 
+.pw-stage__frame {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 100%;
+}
+
 .pw-stage__inner {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  min-height: 100%;
+  flex: 1;
 }
 
-.pw-stage--tablet .pw-stage__inner > :deep(*),
-.pw-stage--mobile .pw-stage__inner > :deep(*) {
-  width: 100%;
+.pw-stage__desc {
+  margin: 0;
+  color: var(--rp-color-text-muted);
+  font-size: 12.5px;
+  line-height: 1.6;
 }
 
-.pw-stage--tablet .pw-stage__inner {
+.pw-stage--tablet .pw-stage__frame {
   max-width: 820px;
   margin: 0 auto;
 }
 
-.pw-stage--mobile .pw-stage__inner {
+.pw-stage--mobile .pw-stage__frame {
   max-width: 420px;
   margin: 0 auto;
 }

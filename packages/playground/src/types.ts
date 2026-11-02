@@ -16,6 +16,14 @@ export interface SceneDescriptor {
   rel: string
   /** 源码语言（固定 'vue'，源码面板高亮用） */
   lang: 'vue'
+  /** 同层排序权重，未声明时为 Number.MAX_SAFE_INTEGER */
+  order: number
+  /** sceneMeta.tags */
+  tags: string[] | null
+  /** sceneMeta.description，显示在预览区上方 */
+  description: string | null
+  /** sceneMeta.hideInNav：不进侧栏但可通过 URL 直达 */
+  hidden: boolean
   /** 懒加载场景组件 */
   load: () => Promise<{ default: Component }>
   /** 懒加载场景源码（?raw） */
