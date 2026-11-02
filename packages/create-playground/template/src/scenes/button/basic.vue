@@ -11,9 +11,16 @@ export const sceneMeta = defineSceneMeta({
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useScenePayload } from '@rinova/playground'
 import { MyButton } from '../../components'
 
 const count = ref(0)
+
+// 注册后工具栏「参数」按钮可点，右侧显示入参 / 出参快照
+useScenePayload({
+  input: () => ({ count: count.value }),
+  output: () => ({ clicked: count.value }),
+})
 </script>
 
 <template>

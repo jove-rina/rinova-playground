@@ -3,7 +3,9 @@ import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'v
 import config from 'virtual:playground/config'
 import { scenes } from 'virtual:playground/scenes'
 import PwToastHost from '../components/PwToastHost.vue'
+import { currentPayload } from '../payload/registry'
 import '../styles/theme.less'
+import PlaygroundPayloadPanel from './PlaygroundPayloadPanel.vue'
 import PlaygroundSidebar from './PlaygroundSidebar.vue'
 import PlaygroundSourcePanel from './PlaygroundSourcePanel.vue'
 import PlaygroundStage from './PlaygroundStage.vue'
@@ -31,6 +33,12 @@ const activeId = ref(scenes.find((scene) => !scene.hidden)?.id ?? scenes[0]?.id 
 const activeScene = computed(() => scenes.find((scene) => scene.id === activeId.value) ?? scenes[0])
 
 const showCode = ref(false)
+const showPayload = ref(false)
+const hasPayload = computed(() => currentPayload.value !== null)
+
+watch(hasPayload, (value) => {
+  if (!value) showPayload.value = false
+})
 const sidebarRef = ref<InstanceType<typeof PlaygroundSidebar> | null>(null)
 const width = ref<'auto' | 'tablet' | 'mobile'>('auto')
 
@@ -147,15 +155,21 @@ onBeforeUnmount(() => {
         :group="activeScene.group"
         :title="activeScene.title"
         :show-code="showCode"
+        :show-payload="showPayload"
+        :has-payload="hasPayload"
         :width="width"
         :theme="theme"
         @toggle-code="showCode = !showCode"
+        @toggle-payload="showPayload = !showPayload"
         @update:width="width = $event"
         @toggle-theme="toggleTheme"
       />
 
-      <PlaygroundStage v-if="activeScene" :scene="activeScene" :width="width" />
-      <div v-else class="pw-empty">没有找到任何场景，请在 scenes 目录下新建 .vue 文件。</div>
+      <div class="pw-body">
+        <PlaygroundStage v-if="activeScene" :scene="activeScene" :width="width" />
+        <div v-else class="pw-empty">没有找到任何场景，请在 scenes 目录下新建 .vue 文件。</div>
+        <PlaygroundPayloadPanel v-if="showPayload && hasPayload" :theme="theme" />
+      </div>
 
       <div v-if="showCode && activeScene" class="pw-source-slot">
         <PlaygroundSourcePanel :scene="activeScene" :theme="theme" @close="showCode = false" />
@@ -182,6 +196,12 @@ onBeforeUnmount(() => {
   flex-direction: column;
   flex: 1;
   min-width: 0;
+}
+
+.pw-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
 }
 
 .pw-source-slot {

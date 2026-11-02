@@ -39,6 +39,21 @@ export const sceneMeta = defineSceneMeta({
 </script>
 ```
 
+## 入参 / 出参面板
+
+在场景的 `<script setup>` 里调用 `useScenePayload`，工具栏「参数」按钮就会启用：
+
+```ts
+import { useScenePayload } from '@rinova/playground'
+
+useScenePayload({
+  input: () => ({ count: count.value }),
+  output: () => ({ clicked: count.value }),
+})
+```
+
+面板每 400ms 取一次快照，返回任意可 JSON 序列化的对象即可。
+
 ## 目录
 
 ```

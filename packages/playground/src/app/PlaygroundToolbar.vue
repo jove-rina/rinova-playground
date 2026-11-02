@@ -1,17 +1,20 @@
 <script setup lang="ts">
-import { Code2, Moon, Monitor, Smartphone, Sun, Tablet } from '@lucide/vue'
+import { Code2, Moon, Monitor, SlidersHorizontal, Smartphone, Sun, Tablet } from '@lucide/vue'
 import PwButton from '../components/PwButton.vue'
 
 defineProps<{
   group: string
   title: string
   showCode: boolean
+  showPayload: boolean
+  hasPayload: boolean
   width: 'auto' | 'tablet' | 'mobile'
   theme: 'light' | 'dark'
 }>()
 
 const emit = defineEmits<{
   'toggle-code': []
+  'toggle-payload': []
   'update:width': [width: 'auto' | 'tablet' | 'mobile']
   'toggle-theme': []
 }>()
@@ -51,6 +54,19 @@ const widths = [
           <Moon v-if="theme === 'light'" :size="14" />
           <Sun v-else :size="14" />
         </template>
+      </PwButton>
+
+      <PwButton
+        size="sm"
+        :variant="showPayload ? 'primary' : 'ghost'"
+        :disabled="!hasPayload"
+        :title="hasPayload ? '入参 / 出参' : '该场景没有声明 sceneMeta 或 useScenePayload'"
+        @click="emit('toggle-payload')"
+      >
+        <template #icon>
+          <SlidersHorizontal :size="14" />
+        </template>
+        参数
       </PwButton>
 
       <PwButton size="sm" :variant="showCode ? 'primary' : 'ghost'" @click="emit('toggle-code')">

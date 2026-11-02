@@ -12,9 +12,15 @@ export const sceneMeta = defineSceneMeta({
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useScenePayload } from '@rinova/playground'
 import { MyButton } from '../../lib'
 
 const count = ref(0)
+
+useScenePayload({
+  input: () => ({ count: count.value, disabled: false }),
+  output: () => ({ clicked: count.value, doubled: count.value * 2 }),
+})
 </script>
 
 <template>

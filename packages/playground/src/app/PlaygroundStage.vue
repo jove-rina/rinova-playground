@@ -68,6 +68,13 @@ watch(
   align-items: flex-start;
   justify-content: center;
   flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+
+  /* 场景内容不要被压缩：窄容器时横向滚动，而不是把按钮挤成几行 */
+  & > :deep(*) {
+    flex: 0 0 auto;
+  }
 }
 
 .pw-stage__desc {
