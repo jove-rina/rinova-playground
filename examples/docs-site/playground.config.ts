@@ -6,5 +6,5 @@ export default defineConfig({
   port: 5280,
   components: ['src/components/**/*.vue'],
   groups: { start: '开始', concepts: '概念', guide: '指南' },
-  editor: { preset: 'vscode' },
+  editor: { preset: 'cursor' },
 })

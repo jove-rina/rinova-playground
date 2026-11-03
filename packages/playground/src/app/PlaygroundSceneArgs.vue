@@ -143,8 +143,8 @@ const resetSlot = (binding: SceneArgsBinding): void => {
 
 .pw-args__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 8px 20px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px 20px;
 
   @media (max-width: 720px) {
     grid-template-columns: minmax(0, 1fr);
@@ -153,16 +153,15 @@ const resetSlot = (binding: SceneArgsBinding): void => {
 
 .pw-args__field {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 4px;
   min-width: 0;
 }
 
 .pw-args__label {
-  flex: 0 0 88px;
   overflow: hidden;
   color: var(--rp-color-text-muted);
-  font-size: 12px;
+  font-size: 11.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

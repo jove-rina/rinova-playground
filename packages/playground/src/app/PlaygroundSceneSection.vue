@@ -7,7 +7,7 @@ import PlaygroundSceneArgs from './PlaygroundSceneArgs.vue'
 import PlaygroundSceneSource from './PlaygroundSceneSource.vue'
 import PlaygroundSceneOutput from './PlaygroundSceneOutput.vue'
 import PwSceneBoundary from '../components/PwSceneBoundary.vue'
-import { copyPath, editorEnabled, openInEditor } from '../code/openInEditor'
+import { copyPath, editorEnabled, editorLabel, openInEditor } from '../code/openInEditor'
 import { provideSceneContext } from '../payload/context'
 import { currentArgsSlots } from '../payload/args'
 import { currentOutputSlots } from '../payload/output'
@@ -89,7 +89,7 @@ defineExpose({ mount })
           @click="openInEditor(scene.rel)"
         >
           <SquareArrowOutUpRight :size="13" />
-          在编辑器打开
+          在 {{ editorLabel() }} 打开
         </button>
         <button
           v-else

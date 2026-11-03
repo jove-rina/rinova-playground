@@ -14,6 +14,16 @@ const presets: Record<string, (file: string, line: number) => string> = {
   webstorm: (file, line) => `webstorm://open?line=${line}&file=${encodeURIComponent(file)}`,
 }
 
+const labels: Record<string, string> = {
+  vscode: 'VS Code',
+  cursor: 'Cursor',
+  webstorm: 'WebStorm',
+  custom: '编辑器',
+}
+
+/** 按钮上显示的编辑器名，如「在 Cursor 打开」 */
+export const editorLabel = (): string => labels[editorConfig().preset ?? ''] ?? '编辑器'
+
 const editorConfig = (): EditorConfig => ((config as { editor?: EditorConfig }).editor ?? {})
 
 /** 项目根绝对路径；`editor.exposeRoot: false` 时插件不下发 */
@@ -45,10 +55,14 @@ export const openInEditor = (rel: string, line = 1): void => {
     return
   }
   try {
+    // 必须挂到文档里再点击：脱离文档的 <a> 在部分浏览器里不会触发协议跳转
     const anchor = document.createElement('a')
     anchor.href = url
     anchor.rel = 'noopener'
+    anchor.style.display = 'none'
+    document.body.appendChild(anchor)
     anchor.click()
+    window.setTimeout(() => anchor.remove(), 0)
   } catch {
     toast('打开本地编辑器失败')
   }

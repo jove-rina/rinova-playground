@@ -148,10 +148,10 @@ onMounted(() => {
     </header>
 
     <div ref="scrollEl" class="pw-page__scroll" @scroll.passive="onScroll">
-      <div class="pw-page__inner" :style="{ maxWidth }">
-        <p v-if="page.description" class="pw-page__desc">{{ page.description }}</p>
+      <div class="pw-page__body">
+        <div class="pw-page__frame" :style="{ maxWidth }">
+          <p v-if="page.description" class="pw-page__desc">{{ page.description }}</p>
 
-        <div class="pw-page__body">
           <div class="pw-page__main">
             <PlaygroundSceneSection
               v-for="scene in scenes"
@@ -163,8 +163,8 @@ onMounted(() => {
               @focus="jump"
             />
           </div>
-          <PlaygroundPageIndex :scenes="scenes" :active="active" @jump="jump" />
         </div>
+        <PlaygroundPageIndex :scenes="scenes" :active="active" @jump="jump" />
       </div>
     </div>
   </div>
@@ -225,8 +225,9 @@ onMounted(() => {
     padding: 20px 24px 40px;
   }
 
-  &__inner {
-    width: 100%;
+  &__frame {
+    flex: 1;
+    min-width: 0;
     margin: 0 auto;
     transition: max-width 0.2s ease;
   }
@@ -242,6 +243,7 @@ onMounted(() => {
     display: flex;
     align-items: flex-start;
     gap: 32px;
+    width: 100%;
   }
 
   &__main {

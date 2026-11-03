@@ -6,5 +6,5 @@ export default defineConfig({
   port: 5273,
   components: ['src/lib/**/*.vue'],
   groups: { button: 'Button', card: 'Card', internal: 'Internal' },
-  editor: { preset: 'vscode' },
+  editor: { preset: 'cursor' },
 })

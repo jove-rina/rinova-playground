@@ -6,6 +6,6 @@ export default defineConfig({
   port: 5273,
   // 契约清单：扫组件 props，产出 .playground/{manifest.json,llms.txt,coverage.md}
   groups: { button: 'Button', card: 'Card' },
-  editor: { preset: 'vscode' },
+  editor: { preset: 'cursor' },
   components: ['src/components/**/*.vue'],
 })
