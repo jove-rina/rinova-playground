@@ -17,9 +17,9 @@ interface ManifestComponent {
   name: string
   rel: string
   props: ManifestProp[]
-  events: string[]
-  slots: string[]
-  exposed: string[]
+  events: { name: string; type: string; signature: string; description: string }[]
+  slots: { name: string; type: string; description: string }[]
+  exposed: { name: string; type: string; description: string }[]
   scenes: string[]
   uncoveredProps: string[]
 }
@@ -90,9 +90,25 @@ const formatComponent = (root: string, component: ManifestComponent, manifest: M
     if (prop.description) lines.push(`  ${prop.description}`)
   }
 
-  if (component.events.length) lines.push('', `## Events`, ...component.events.map((name) => `- ${name}`))
-  if (component.slots.length) lines.push('', `## Slots`, ...component.slots.map((name) => `- ${name}`))
-  if (component.exposed.length) lines.push('', `## Exposed`, ...component.exposed.map((name) => `- ${name}`))
+  if (component.events.length) {
+    lines.push('', '## Events')
+    for (const event of component.events) {
+      lines.push(`- ${event.name} ${event.type}${event.description ? ` — ${event.description}` : ''}`)
+      if (event.signature) lines.push(`  ${event.signature}`)
+    }
+  }
+  if (component.slots.length) {
+    lines.push('', '## Slots')
+    for (const slot of component.slots) {
+      lines.push(`- ${slot.name}${slot.description ? ` — ${slot.description}` : ''}`)
+    }
+  }
+  if (component.exposed.length) {
+    lines.push('', '## Exposed')
+    for (const item of component.exposed) {
+      lines.push(`- ${item.name}: ${item.type}${item.description ? ` — ${item.description}` : ''}`)
+    }
+  }
 
   const scenes = manifest.scenes.filter((scene) => component.scenes.includes(scene.id))
   lines.push('', '## 相关场景')

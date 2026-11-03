@@ -90,6 +90,13 @@ const run = async (): Promise<void> => {
     (get.text.match(/MyButton\.vue:\d+/) ?? [''])[0]
   )
 
+  const input = await call('capability_get', { component: 'MyInput' })
+  check(
+    'capability_get 输出事件参数与说明',
+    input.text.includes('## Events') && input.text.includes('FocusEvent') && input.text.includes('## Slots'),
+    (input.text.match(/## Events[\s\S]{0,60}/) ?? [''])[0].replace(/\n/g, ' ')
+  )
+
   const scenes = await call('scenario_list', { component: 'MyButton' })
   check('scenario_list 返回场景', scenes.text.includes('src/scenes/'), scenes.text.split('\n').length + ' 行')
 
