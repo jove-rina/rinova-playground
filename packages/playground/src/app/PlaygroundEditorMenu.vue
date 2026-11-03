@@ -129,7 +129,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
     border: 1px solid var(--rp-color-border);
     border-radius: 8px;
     background: var(--rp-color-surface);
-    box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--rp-color-text) 12%, transparent);
   }
 
   &__menu-label {
