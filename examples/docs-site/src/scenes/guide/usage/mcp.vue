@@ -1,7 +1,7 @@
 <script lang="ts">
 import { defineSceneMeta } from '@rinova/playground'
 
-export const sceneMeta = defineSceneMeta({ title: 'MCP 接入', order: 3, tags: ['AI', 'mcp'] })
+export const sceneMeta = defineSceneMeta({ title: 'MCP 接入', order: 4, tags: ['AI', 'mcp'] })
 </script>
 
 <script setup lang="ts">

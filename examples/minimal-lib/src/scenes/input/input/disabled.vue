@@ -4,8 +4,8 @@ import { defineSceneMeta } from '@rinova/playground'
 export const sceneMeta = defineSceneMeta({
   title: '禁用 disabled',
   order: 3,
+  api: ['disabled', 'size', 'placeholder'],
   section: 'props',
-  api: ['disabled', 'size'],
   description: 'disabled 与两个尺寸档位。',
 })
 </script>

@@ -4,6 +4,7 @@ import { defineSceneMeta } from '@rinova/playground'
 export const sceneMeta = defineSceneMeta({
   title: '按钮 · 基础用法',
   order: 1,
+  api: ['variant'],
   tags: ['基础', 'click'],
   files: ['src/lib/MyButton.vue'],
   description: '点击按钮累加计数，用来验证事件透传与响应式更新。',

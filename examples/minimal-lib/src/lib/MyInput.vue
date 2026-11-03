@@ -3,9 +3,13 @@ import { computed, ref } from 'vue'
 
 const props = withDefaults(
   defineProps<{
+    /** 输入框的值（v-model） */
     modelValue?: string
+    /** 占位文案 */
     placeholder?: string
+    /** 禁用：灰底且不可输入 */
     disabled?: boolean
+    /** 高度档位：sm 28px / md 34px */
     size?: 'sm' | 'md'
     /** 有值时显示清空按钮 */
     clearable?: boolean
@@ -16,13 +20,23 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
+  /** 值变化（v-model 用） */
   'update:modelValue': [value: string]
+  /** 聚焦 */
   focus: [event: FocusEvent]
+  /** 失焦 */
   blur: [event: FocusEvent]
   /** 回车时带上当前值 */
   enter: [value: string]
   /** 点清空按钮 */
   clear: []
+}>()
+
+defineSlots<{
+  /** 输入框左侧（图标、货币符号等） */
+  prefix?: () => unknown
+  /** 输入框右侧（单位、快捷键提示等） */
+  suffix?: () => unknown
 }>()
 
 const inputEl = ref<HTMLInputElement | null>(null)
@@ -42,11 +56,22 @@ const onKeydown = (event: KeyboardEvent): void => {
   if (event.key === 'Enter') emit('enter', props.modelValue)
 }
 
-defineExpose({
+interface MyInputExpose {
+  /** 让输入框获得焦点 */
+  focus: () => void
+  /** 选中输入框里的全部文字 */
+  select: () => void
+  /** 清空并重新聚焦 */
+  clear: () => void
+  /** 原生 input 元素 */
+  element: HTMLInputElement | null
+}
+
+defineExpose<MyInputExpose>({
   focus: (): void => inputEl.value?.focus(),
   select: (): void => inputEl.value?.select(),
   clear,
-  element: inputEl,
+  element: inputEl as never,
 })
 </script>
 

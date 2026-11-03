@@ -3,9 +3,13 @@ import { ref } from 'vue'
 
 const props = withDefaults(
   defineProps<{
+    /** 尺寸档位：sm 26px / md 32px / lg 40px */
     size?: 'sm' | 'md' | 'lg'
+    /** 外观：primary 实心蓝、ghost 描边 */
     variant?: 'primary' | 'ghost'
+    /** 禁用：不响应点击且半透明 */
     disabled?: boolean
+    /** 加载中：显示转圈并顺便禁用 */
     loading?: boolean
     /** 只放图标：宽度收成正方形，内容从 icon 插槽来 */
     iconOnly?: boolean
@@ -28,11 +32,20 @@ const props = withDefaults(
   }
 )
 
-const emit = defineEmits<{
+interface MyButtonEmits {
   /** 原生点击；同时会触发一次 press */
-  click: [event: MouseEvent]
+  (event: 'click', payload: MouseEvent): void
   /** 业务级事件：点击时把 variant 传出去，用来看 emit 参数 */
-  press: [variant: string, event: MouseEvent]
+  (event: 'press', variant: string, payload: MouseEvent): void
+}
+
+const emit = defineEmits<MyButtonEmits>()
+
+defineSlots<{
+  /** 按钮文字 */
+  default?: () => unknown
+  /** 图标位（loading 时被转圈占用） */
+  icon?: () => unknown
 }>()
 
 const rootEl = ref<HTMLButtonElement | null>(null)
@@ -42,10 +55,19 @@ const onClick = (event: MouseEvent): void => {
   emit('press', props.variant, event)
 }
 
-defineExpose({
+interface MyButtonExpose {
+  /** 让按钮获得焦点 */
+  focus: () => void
+  /** 让按钮失焦 */
+  blur: () => void
+  /** 原生 button 元素 */
+  element: HTMLButtonElement | null
+}
+
+defineExpose<MyButtonExpose>({
   focus: (): void => rootEl.value?.focus(),
   blur: (): void => rootEl.value?.blur(),
-  element: rootEl,
+  element: rootEl as never,
 })
 </script>
 

@@ -42,15 +42,39 @@ export interface ManifestProp {
   description: string
 }
 
+export interface ManifestEvent {
+  name: string
+  /** 参数列表，如 `[event: FocusEvent]` */
+  type: string
+  /** 完整签名，如 `(event: "focus", event: FocusEvent): void` */
+  signature: string
+  description: string
+}
+
+export interface ManifestSlot {
+  name: string
+  /** 作用域类型，如 `{}` 或 `{ item: Row }` */
+  type: string
+  description: string
+}
+
+export interface ManifestExposed {
+  name: string
+  type: string
+  description: string
+}
+
 export interface ManifestComponent {
   name: string
   rel: string
   props: ManifestProp[]
-  events: string[]
-  slots: string[]
-  exposed: string[]
+  events: ManifestEvent[]
+  slots: ManifestSlot[]
+  exposed: ManifestExposed[]
   scenes: string[]
   uncoveredProps: string[]
+  /** 没写 JSDoc 的 API，格式 `props:disabled` / `events:press` */
+  undocumented: string[]
 }
 
 export interface ManifestScene {
@@ -153,16 +177,13 @@ export const buildManifest = (input: ManifestInput): Manifest => {
 
   const sceneTexts = new Map<string, string>()
   for (const scene of input.scenes) {
-    // 合成条目（分组落地页）没有源文件，rel 为空，不能去 read
+    // 合成条目没有源文件，rel 为空，不能去 read
     if (!scene.rel) {
       sceneTexts.set(scene.id, '')
       continue
     }
     const abs = path.join(input.root, scene.rel)
-    sceneTexts.set(
-      scene.id,
-      fs.existsSync(abs) ? fs.readFileSync(abs, 'utf8') : ''
-    )
+    sceneTexts.set(scene.id, fs.existsSync(abs) ? fs.readFileSync(abs, 'utf8') : '')
   }
 
   const components: ManifestComponent[] = findComponentFiles(input.root, input.patterns).map((rel) => {
@@ -178,6 +199,25 @@ export const buildManifest = (input: ManifestInput): Manifest => {
         description: prop.description ?? '',
       }))
 
+    const events: ManifestEvent[] = meta.events.map((event) => ({
+      name: event.name,
+      type: normalizeType(event.type),
+      signature: String(event.signature ?? ''),
+      description: event.description ?? '',
+    }))
+
+    const slots: ManifestSlot[] = meta.slots.map((slot) => ({
+      name: slot.name,
+      type: normalizeType(slot.type),
+      description: slot.description ?? '',
+    }))
+
+    const exposed: ManifestExposed[] = meta.exposed.map((item) => ({
+      name: item.name,
+      type: normalizeType(item.type),
+      description: item.description ?? '',
+    }))
+
     // 关联场景：场景源码里出现过该组件的文件名（import 路径或组件标签）
     const base = componentName(rel)
     const related = input.scenes.filter((scene) => {
@@ -192,15 +232,24 @@ export const buildManifest = (input: ManifestInput): Manifest => {
       )
       .map((prop) => prop.name)
 
+    // 注意：vue-component-meta 不解析 defineEmits 的 JSDoc，事件说明只能靠 pageMeta.apiNotes 补，
+    // 所以这里不把 events 计为「缺说明」，否则每个组件都恒缺。
+    const undocumented: string[] = [
+      ...props.filter((item) => !item.description).map((item) => `props:${item.name}`),
+      ...slots.filter((item) => !item.description).map((item) => `slots:${item.name}`),
+      ...exposed.filter((item) => !item.description).map((item) => `exposed:${item.name}`),
+    ]
+
     return {
       name: meta.name || base,
       rel,
       props,
-      events: meta.events.map((event) => event.name),
-      slots: meta.slots.map((slot) => slot.name),
-      exposed: meta.exposed.map((item) => item.name),
+      events,
+      slots,
+      exposed,
       scenes: related.map((scene) => scene.id),
       uncoveredProps,
+      undocumented,
     }
   })
 
@@ -230,12 +279,20 @@ export const renderLlmsTxt = (manifest: Manifest): string => {
       lines.push(`- prop ${prop.name}: ${prop.type}${flags ? ` (${flags})` : ''}`)
       if (prop.description) lines.push(`  ${prop.description}`)
     }
-    if (component.events.length) lines.push(`- events: ${component.events.join(', ')}`)
-    if (component.slots.length) lines.push(`- slots: ${component.slots.join(', ')}`)
-    if (component.exposed.length) lines.push(`- exposed: ${component.exposed.join(', ')}`)
+    if (component.events.length) {
+      lines.push(`- events: ${component.events.map((event) => `${event.name}${event.type}`).join(', ')}`)
+    }
+    if (component.slots.length) {
+      lines.push(`- slots: ${component.slots.map((slot) => `${slot.name}${slot.type ? ` ${slot.type}` : ''}`).join(', ')}`)
+    }
+    if (component.exposed.length) {
+      lines.push(`- exposed: ${component.exposed.map((item) => `${item.name}${item.type ? `: ${item.type}` : ''}`).join(', ')}`)
+    }
     if (component.scenes.length) lines.push(`- 相关场景: ${component.scenes.join(', ')}`)
     if (component.uncoveredProps.length)
       lines.push(`- 未覆盖 props: ${component.uncoveredProps.join(', ')}`)
+    if (component.undocumented.length)
+      lines.push(`- 缺说明: ${component.undocumented.join(', ')}`)
     lines.push('')
   }
 
@@ -253,6 +310,10 @@ export const renderCoverage = (manifest: Manifest): string => {
 
   const total = rows.length
   const covered = rows.filter((row) => row.covered).length
+  const missing = manifest.components.flatMap((component) =>
+    component.undocumented.map((item) => `| ${component.name} | ${item} |`)
+  )
+
   const lines = [
     '# Props 覆盖报告',
     '',
@@ -262,6 +323,14 @@ export const renderCoverage = (manifest: Manifest): string => {
     '| 组件 | prop | 有场景覆盖 |',
     '|---|---|---|',
     ...rows.map((row) => `| ${row.component} | ${row.prop} | ${row.covered ? '是' : '否'} |`),
+    '',
+    '# 缺 JSDoc 的 API',
+    '',
+    '补上 `/** 说明 */` 就会出现在页面的 API 表里。',
+    '',
+    '| 组件 | API |',
+    '|---|---|',
+    ...(missing.length ? missing : ['| — | 全部已写说明 |']),
     '',
   ]
 

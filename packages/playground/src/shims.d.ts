@@ -18,6 +18,13 @@ declare module 'virtual:playground/config' {
   export default config
 }
 
+declare module 'virtual:playground/api' {
+  import type { ComponentApi } from './types'
+  export const api: Record<string, ComponentApi>
+  /** 页 id → 组件名 */
+  export const pageComponents: Record<string, string>
+}
+
 declare module 'virtual:playground/scenes' {
   import type { PageDescriptor, SceneDescriptor } from './types'
   export const scenes: SceneDescriptor[]

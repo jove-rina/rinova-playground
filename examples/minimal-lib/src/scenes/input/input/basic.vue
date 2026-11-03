@@ -4,6 +4,7 @@ import { defineSceneMeta } from '@rinova/playground'
 export const sceneMeta = defineSceneMeta({
   title: '基础用法',
   order: 1,
+  api: ['modelValue'],
   description: '最简单的用法：v-model 绑一个值。',
 })
 </script>

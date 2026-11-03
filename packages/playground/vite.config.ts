@@ -38,6 +38,7 @@ export default defineConfig({
         'vue',
         'virtual:playground/config',
         'virtual:playground/scenes',
+        'virtual:playground/api',
         'virtual:playground/editor-css',
         '@rinova/playground/editor.css',
       ],

@@ -2,7 +2,7 @@
 import { defineSceneMeta } from '@rinova/playground'
 
 export const sceneMeta = defineSceneMeta({
-  order: 4,
+  order: 5,
   title: '快捷键',
 })
 </script>

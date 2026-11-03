@@ -21,6 +21,13 @@ import Prose from '../../../components/Prose.vue'
       </tbody>
     </table>
 
+    <h2>它同时驱动页面 API 表</h2>
+    <p>
+      组件页在 <code>meta.ts</code> 里声明 <code>component: 'MyInput'</code> 之后，页头会出现「API」视图：
+      Props / Events / Slots / Exposes 四张表，列出类型、默认值、说明与「哪些场景演示了它」。
+      说明来自组件的 JSDoc；事件说明用 <code>apiNotes</code> 补。
+    </p>
+
     <h2>触发时机</h2>
     <ul>
       <li>dev server 启动</li>

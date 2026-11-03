@@ -32,7 +32,10 @@ export default defineConfig({
         <tr><td><code>codeViewer</code></td><td><code>monaco</code></td><td>代码区实现，可切 <code>shiki</code> 省体积</td></tr>
         <tr><td><code>theme.ui</code></td><td><code>auto</code></td><td>外壳主题（12 个 CSS 变量）</td></tr>
         <tr><td><code>theme.code</code></td><td><code>vitesse-dark</code></td><td>代码区 shiki 主题</td></tr>
+        <tr><td><code>groups</code></td><td>—</td><td>分组目录名 → 侧栏显示名，声明顺序即侧栏顺序</td></tr>
+        <tr><td><code>editor</code></td><td>—</td><td>本地编辑器：<code>preset</code> / <code>options</code> / <code>allowChoice</code> / <code>allowCustom</code> / <code>exposeRoot</code></td></tr>
         <tr><td><code>base</code></td><td><code>/</code></td><td>部署子路径</td></tr>
+        <tr><td><code>routeBase</code></td><td>同 base</td><td>只影响场景 URL 前缀（MPA 子路径部署）</td></tr>
       </tbody>
     </table>
   </Prose>

@@ -8,12 +8,13 @@ import PlaygroundSceneOutput from './PlaygroundSceneOutput.vue'
 import PwSceneBoundary from '../components/PwSceneBoundary.vue'
 import { provideSceneContext } from '../payload/context'
 import { currentArgsSlots } from '../payload/args'
+import { api, pageComponents } from 'virtual:playground/api'
 import { currentOutputSlots } from '../payload/output'
 import type { Component } from 'vue'
-import type { SceneDescriptor } from '../types'
+import type { ComponentApi, SceneDescriptor } from '../types'
 
 const props = defineProps<{ scene: SceneDescriptor; showArgs?: boolean; theme?: 'light' | 'dark' }>()
-const emit = defineEmits<{ focus: [name: string] }>()
+const emit = defineEmits<{ focus: [name: string]; inspect: [key: string] }>()
 
 /** 让场景内的 useSceneArgs / useSceneOutput 知道自己属于哪个场景 */
 provideSceneContext(props.scene.name)
@@ -24,7 +25,36 @@ const mounted = ref(false)
 
 
 const fileName = computed(() => props.scene.rel.split('/').pop() ?? props.scene.rel)
-const apiItems = computed(() => (props.scene.api ?? []).map((name) => ({ name })))
+/** 该场景演示的 API：名字 + 类型/默认值（从契约里查） */
+const contractOfPage = computed<ComponentApi | null>(() => {
+  const name = pageComponents[props.scene.pageId]
+  return name ? (api[name] ?? null) : null
+})
+
+const apiItems = computed(() =>
+  (props.scene.api ?? []).map((name) => {
+    const source = contractOfPage.value
+    const prop = source?.props.find((item) => item.name === name)
+    const event = source?.events.find((item) => item.name === name)
+    return {
+      name,
+      type: prop?.type ?? event?.type,
+      default: prop?.default,
+    }
+  })
+)
+
+/** section → API 表里的 tab 名 */
+const SECTION_KIND: Record<string, string> = {
+  props: 'props',
+  events: 'events',
+  exposes: 'exposed',
+  slots: 'slots',
+}
+
+const inspect = (name: string): void => {
+  emit('inspect', `${SECTION_KIND[props.scene.section] ?? 'props'}:${name}`)
+}
 
 /** 本场景是否声明了入参 / 出参；决定「参数 | 出参」并排还是单栏 */
 const ownsSlot = (sceneId: string): boolean => !sceneId || sceneId === props.scene.name
@@ -81,7 +111,7 @@ defineExpose({ mount })
     </header>
 
     <p v-if="scene.description" class="pw-scene__desc">{{ scene.description }}</p>
-    <PwApiBrief v-if="apiItems.length" :items="apiItems" />
+    <PwApiBrief v-if="apiItems.length" :items="apiItems" @inspect="inspect" />
 
     <div class="pw-scene__preview">
       <PwSceneBoundary :title="scene.title" :file="scene.rel">

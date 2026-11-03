@@ -46,4 +46,48 @@ export interface PageDescriptor {
   title: string
   description: string | null
   order: number
+  /** 这一页演示的组件名（pageMeta.component 或按目录名匹配） */
+  component: string | null
+  /** API 补充说明（pageMeta.apiNotes），键格式 `events:press` */
+  apiNotes: Record<string, string> | null
+}
+
+/** 组件契约：由 vue-component-meta 从 TS 类型 + JSDoc 生成 */
+export interface ComponentApiProp {
+  name: string
+  type: string
+  required: boolean
+  default: string
+  description: string
+}
+
+export interface ComponentApiEvent {
+  name: string
+  type: string
+  signature: string
+  description: string
+}
+
+export interface ComponentApiSlot {
+  name: string
+  type: string
+  description: string
+}
+
+export interface ComponentApiExposed {
+  name: string
+  type: string
+  description: string
+}
+
+export interface ComponentApi {
+  name: string
+  rel: string
+  props: ComponentApiProp[]
+  events: ComponentApiEvent[]
+  slots: ComponentApiSlot[]
+  exposed: ComponentApiExposed[]
+  scenes: string[]
+  uncoveredProps: string[]
+  undocumented: string[]
 }

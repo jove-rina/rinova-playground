@@ -223,6 +223,34 @@ if (fs.existsSync(manifestPath)) {
   record('契约清单提取正确（含未覆盖标记）', true, '未生成 manifest，跳过')
 }
 
+/* 11.5 API 文档数据：events/slots/exposed 带类型，undocumented 是数组 */
+if (fs.existsSync(manifestPath)) {
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as {
+    components: Array<{
+      name: string
+      props: Array<{ name: string; description: string }>
+      events: Array<{ name: string; type: string; signature: string }>
+      slots: Array<{ name: string; description: string }>
+      exposed: Array<{ name: string; description: string }>
+      undocumented: string[]
+    }>
+  }
+  const input = manifest.components.find((item) => item.name === 'MyInput')
+  const eventTyped = Boolean(
+    input?.events.some((event) => event.name === 'focus' && event.type.includes('FocusEvent') && event.signature.includes('focus'))
+  )
+  const slotTyped = Boolean(input?.slots.some((slot) => slot.name === 'prefix'))
+  const exposedDoc = Boolean(input?.exposed.some((item) => item.name === 'focus' && item.description.length > 0))
+  const noGap = Array.isArray(input?.undocumented) && input.undocumented.length === 0
+  record(
+    'API 契约（事件类型 / 插槽 / 暴露 / 缺说明清单）',
+    eventTyped && slotTyped && exposedDoc && noGap,
+    eventTyped ? 'MyInput.events/slots/exposed 字段齐全，缺说明 0' : 'MyInput 契约字段缺失'
+  )
+} else {
+  record('API 契约（事件类型 / 插槽 / 暴露 / 缺说明清单）', true, '未生成 manifest，跳过')
+}
+
 /* 12. 脚手架默认开契约清单：模板必须声明 components，否则新人拿不到 manifest */
 const templateConfigPath = path.join(root, 'packages/create-playground/template/playground.config.ts')
 const templateConfig = fs.existsSync(templateConfigPath)

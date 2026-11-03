@@ -8,11 +8,13 @@ import type { Plugin, ViteDevServer } from 'vite'
 const VIRTUAL_CONFIG = 'virtual:playground/config'
 const VIRTUAL_SCENES = 'virtual:playground/scenes'
 const VIRTUAL_EDITOR_CSS = 'virtual:playground/editor-css'
+const VIRTUAL_API = 'virtual:playground/api'
 
 const RESOLVED_ID: Record<string, string> = {
   [VIRTUAL_CONFIG]: `\0${VIRTUAL_CONFIG}`,
   [VIRTUAL_SCENES]: `\0${VIRTUAL_SCENES}`,
   [VIRTUAL_EDITOR_CSS]: `\0${VIRTUAL_EDITOR_CSS}`,
+  [VIRTUAL_API]: `\0${VIRTUAL_API}`,
 }
 
 const CONFIG_FILES = [
@@ -52,6 +54,10 @@ interface PageMeta {
   title?: string
   description?: string
   order?: number
+  /** 这一页演示哪个组件（用于生成 API 表）；不写则按页目录名自动匹配 */
+  component?: string
+  /** API 补充说明，键格式 `events:press` */
+  apiNotes?: Record<string, string>
 }
 
 interface SceneSource {
@@ -97,6 +103,10 @@ interface PageEntry {
   title: string
   description?: string
   order: number
+  /** 页绑定的组件名（pageMeta.component） */
+  component?: string
+  /** API 补充说明 */
+  apiNotes?: Record<string, string>
 }
 
 interface PlaygroundUserConfig {
@@ -150,6 +160,7 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
   let configFile = ''
   let isBuild = false
   let outDir = 'dist'
+  let devServer: ViteDevServer | null = null
 
   const jiti = createJiti(import.meta.url, { interopDefault: true, moduleCache: false })
 
@@ -248,6 +259,11 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
           title: typeof meta.title === 'string' ? meta.title : undefined,
           description: typeof meta.description === 'string' ? meta.description : undefined,
           order: typeof meta.order === 'number' ? meta.order : undefined,
+          component: typeof meta.component === 'string' ? meta.component : undefined,
+          apiNotes:
+            meta.apiNotes && typeof meta.apiNotes === 'object'
+              ? Object.fromEntries(Object.entries(meta.apiNotes).map(([key, value]) => [key, String(value)]))
+              : undefined,
         }
       } catch (error) {
         console.warn(
@@ -293,6 +309,8 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
           title: pageTitle,
           description: meta.description,
           order: typeof meta.order === 'number' ? meta.order : Number.MAX_SAFE_INTEGER,
+          component: meta.component,
+          apiNotes: meta.apiNotes,
         })
 
         const seen = new Set<string>()
@@ -362,6 +380,9 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
         scenes,
       })
       writeManifest(path.join(root, '.playground'), manifest)
+      // 契约变了要让 API 模块失效：下次请求重新注入
+      const apiMod = devServer?.moduleGraph.getModuleById(RESOLVED_ID[VIRTUAL_API] as string)
+      if (apiMod && devServer) devServer.moduleGraph.invalidateModule(apiMod)
       const props = manifest.components.reduce((sum, item) => sum + item.props.length, 0)
       const uncovered = manifest.components.reduce((sum, item) => sum + item.uncoveredProps.length, 0)
       console.log(
@@ -408,6 +429,50 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
     return `export default ${JSON.stringify(payload)}`
   }
 
+  /**
+   * API 文档模块：只注入「被页面引用到的组件」的契约，
+   * 运行时零请求；页面 → 组件的绑定优先取 pageMeta.component，否则按目录名同名匹配。
+   */
+  const apiModuleCode = (): string => {
+    const manifestPath = path.join(root, '.playground/manifest.json')
+    // 首次请求时清单可能还没生成（dev 下 buildStart 与首个请求的先后不保证）
+    if (!fs.existsSync(manifestPath) && Array.isArray(config.components) && config.components.length) {
+      generateManifest()
+    }
+    if (!fs.existsSync(manifestPath)) return 'export const api = {}\nexport const pageComponents = {}\n'
+
+    let manifest: { components: Array<{ name: string }> } | null = null
+    try {
+      manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as { components: Array<{ name: string }> }
+    } catch {
+      return 'export const api = {}\nexport const pageComponents = {}\n'
+    }
+    if (!manifest?.components?.length) return 'export const api = {}\nexport const pageComponents = {}\n'
+
+    const byName = new Map(manifest.components.map((item) => [item.name.toLowerCase(), item]))
+    const pageComponents: Record<string, string> = {}
+    const used = new Map<string, unknown>()
+
+    for (const page of pages) {
+      const candidates = [
+        page.component,
+        page.id.split('/').slice(-1)[0],
+        page.title.replace(/\s+/g, ''),
+      ].filter(Boolean) as string[]
+
+      const hit = candidates
+        .map((candidate) => byName.get(candidate.toLowerCase()))
+        .find((item) => Boolean(item))
+      if (!hit) continue
+      pageComponents[page.id] = hit.name
+      used.set(hit.name, hit)
+    }
+
+    return `export const api = ${JSON.stringify(Object.fromEntries(used))}
+export const pageComponents = ${JSON.stringify(pageComponents)}
+`
+  }
+
   const scenesModuleCode = (): string => {
     const sceneCode = scenes
       .map((scene) => {
@@ -452,7 +517,9 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
     groupDir: ${JSON.stringify(page.groupDir)},
     title: ${JSON.stringify(page.title)},
     description: ${JSON.stringify(page.description ?? null)},
-    order: ${JSON.stringify(page.order)}
+    order: ${JSON.stringify(page.order)},
+    component: ${JSON.stringify(page.component ?? null)},
+    apiNotes: ${JSON.stringify(page.apiNotes ?? null)}
   }`
       )
       .join(',\n')
@@ -511,12 +578,17 @@ ${pageCode}
         // 转发给使用方的解析器：编辑器样式只在打开代码面板时才拉
         return "import '@rinova/playground/editor.css'"
       }
+      if (id === RESOLVED_ID[VIRTUAL_API]) {
+        await ensureReady()
+        return apiModuleCode()
+      }
       if (id !== RESOLVED_ID[VIRTUAL_CONFIG] && id !== RESOLVED_ID[VIRTUAL_SCENES]) return null
       await ensureReady()
       return id === RESOLVED_ID[VIRTUAL_CONFIG] ? configModuleCode() : scenesModuleCode()
     },
 
     configureServer: async (server) => {
+      devServer = server
       await ensureReady()
       server.watcher.add(scenesDir)
 

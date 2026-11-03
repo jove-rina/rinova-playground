@@ -1,15 +1,26 @@
 <script setup lang="ts">
 withDefaults(
   defineProps<{
+    /** 标题（留空则整块用 header 插槽） */
     title?: string
+    /** 标题下的一行说明 */
     description?: string
-    /** 内边距档位 */
+    /** 内边距档位：sm 10px / md 12px / lg 20px */
     padding?: 'sm' | 'md' | 'lg'
     /** 是否显示边框与阴影 */
     bordered?: boolean
   }>(),
   { title: '', description: '', padding: 'md', bordered: true }
 )
+
+defineSlots<{
+  /** 整个头部，替换 title / description */
+  header?: () => unknown
+  /** 卡片主体 */
+  default?: () => unknown
+  /** 底部操作区，自带分隔线与底色 */
+  footer?: () => unknown
+}>()
 </script>
 
 <template>
