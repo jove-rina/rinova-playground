@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import config from 'virtual:playground/config'
 import { toast } from '../components/toast'
 import { copyText } from './clipboard'
@@ -7,86 +7,136 @@ interface EditorConfig {
   preset?: string
   custom?: string
   exposeRoot?: boolean
-  /** 是否允许访问者在按钮里自己切换编辑器，默认 true */
+  /** 是否允许访问者自己切换编辑器，默认 true */
   allowChoice?: boolean
-  /** 可选编辑器列表，默认全部内置的 */
+  /** 候选编辑器，默认取内置里常用的那几个 */
   options?: string[]
+  /** 是否允许访问者填自定义协议模板，默认 true */
+  allowCustom?: boolean
 }
+
+interface EditorPreset {
+  label: string
+  /** 支持 {file}（原样）、{fileEnc}（URL 编码）、{line} */
+  template: string
+}
+
+/** 内置编辑器协议；都是各编辑器官方注册的 URL scheme */
+export const EDITOR_PRESETS: Record<string, EditorPreset> = {
+  vscode: { label: 'VS Code', template: 'vscode://file/{file}:{line}' },
+  cursor: { label: 'Cursor', template: 'cursor://file/{file}:{line}' },
+  windsurf: { label: 'Windsurf', template: 'windsurf://file/{file}:{line}' },
+  trae: { label: 'Trae', template: 'trae://file/{file}:{line}' },
+  zed: { label: 'Zed', template: 'zed://file/{file}:{line}' },
+  webstorm: { label: 'WebStorm', template: 'webstorm://open?file={fileEnc}&line={line}' },
+  idea: { label: 'IntelliJ IDEA', template: 'idea://open?file={fileEnc}&line={line}' },
+  phpstorm: { label: 'PhpStorm', template: 'phpstorm://open?file={fileEnc}&line={line}' },
+  sublime: { label: 'Sublime Text', template: 'subl://open?url=file://{fileEnc}&line={line}' },
+  nova: { label: 'Nova', template: 'nova://open?path={fileEnc}' },
+}
+
+const DEFAULT_OPTIONS = ['vscode', 'cursor', 'windsurf', 'trae', 'zed', 'webstorm', 'idea', 'sublime']
 
 const STORAGE_KEY = 'rinova-playground:editor'
 
-const presets: Record<string, (file: string, line: number) => string> = {
-  vscode: (file, line) => `vscode://file/${file}:${line}`,
-  cursor: (file, line) => `cursor://file/${file}:${line}`,
-  webstorm: (file, line) => `webstorm://open?line=${line}&file=${encodeURIComponent(file)}`,
+interface EditorChoice {
+  /** 内置 preset 名，或 'custom' */
+  key: string
+  /** key === 'custom' 时的协议模板 */
+  template?: string
 }
-
-const labels: Record<string, string> = {
-  vscode: 'VS Code',
-  cursor: 'Cursor',
-  webstorm: 'WebStorm',
-  custom: '编辑器',
-}
-
-const DEFAULT_OPTIONS = ['vscode', 'cursor', 'webstorm']
 
 const editorConfig = (): EditorConfig => ((config as { editor?: EditorConfig }).editor ?? {})
 
-const readStored = (): string => {
+const readStored = (): EditorChoice | null => {
   try {
-    return localStorage.getItem(STORAGE_KEY) ?? ''
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    // 兼容早期版本：只存了一个 preset 名
+    if (!raw.startsWith('{')) return { key: raw }
+    const parsed = JSON.parse(raw) as EditorChoice
+    return typeof parsed?.key === 'string' ? parsed : null
   } catch {
-    return ''
+    return null
   }
 }
 
-/** 访问者自己选的编辑器（localStorage），没有则用配置里的 preset */
-export const editorChoice = ref<string>(readStored() || editorConfig().preset || 'vscode')
+const fallbackChoice = (): EditorChoice => {
+  const editor = editorConfig()
+  if (editor.preset === 'custom' && editor.custom) return { key: 'custom', template: editor.custom }
+  if (editor.preset) return { key: editor.preset }
+  return { key: DEFAULT_OPTIONS[0] as string }
+}
 
+const choice = ref<EditorChoice>(readStored() ?? fallbackChoice())
+
+/** 当前协议模板：内置 preset 的模板，或访问者自定义的模板 */
+export const editorTemplate = (): string => {
+  if (choice.value.key === 'custom') return choice.value.template ?? editorConfig().custom ?? ''
+  return EDITOR_PRESETS[choice.value.key]?.template ?? ''
+}
+
+export const editorLabel = (): string => {
+  if (choice.value.key === 'custom') {
+    // 自定义模板直接用协议名当标签，读起来是「在 trae 打开」
+    return editorTemplate().split('://')[0] || '自定义'
+  }
+  return EDITOR_PRESETS[choice.value.key]?.label ?? choice.value.key
+}
+
+export const editorChoiceKey = computed(() => choice.value.key)
+
+/** 菜单里的候选：配置限定 → 内置；配置指定的 preset 始终在列表里 */
 export const editorOptions = (): { value: string; label: string }[] => {
   const editor = editorConfig()
   const values = editor.options?.length ? editor.options : DEFAULT_OPTIONS
-  const list = values.filter((value) => value === 'custom' || Boolean(presets[value]))
-  // 配置里指定的 preset 无论如何都要在列表里
+  const list = values
+    .filter((value) => (value === 'custom' ? Boolean(editor.custom) : Boolean(EDITOR_PRESETS[value])))
+    .map((value) => ({ value, label: EDITOR_PRESETS[value]?.label ?? '自定义' }))
+
   const preset = editor.preset
-  if (preset && !list.includes(preset)) list.unshift(preset)
-  return list.map((value) => ({ value, label: labels[value] ?? value }))
+  if (preset && !list.some((item) => item.value === preset)) {
+    list.unshift({
+      value: preset,
+      label: preset === 'custom' ? '自定义' : (EDITOR_PRESETS[preset]?.label ?? preset),
+    })
+  }
+  return list
 }
 
-/** 访问者能否自己选：配置显式关闭，或只有一个可选编辑器时不显示菜单 */
-export const canChooseEditor = (): boolean =>
-  editorConfig().allowChoice !== false && editorOptions().length > 1
+/** 是否允许访问者填自定义模板（任意 IDE 都能接） */
+export const allowCustomEditor = (): boolean => editorConfig().allowCustom !== false
 
-export const setEditorChoice = (value: string): void => {
-  editorChoice.value = value
+/** 访问者能否自己选：配置显式关闭，或只有一个候选且不允许自定义时隐藏菜单 */
+export const canChooseEditor = (): boolean =>
+  editorConfig().allowChoice !== false && (editorOptions().length > 1 || allowCustomEditor())
+
+export const setEditorChoice = (next: EditorChoice): void => {
+  choice.value = next
   try {
-    localStorage.setItem(STORAGE_KEY, value)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
   } catch {
-    // 隐私模式下写不进去也没关系，本次会话仍生效
+    // 隐私模式写不进去，本次会话仍然生效
   }
 }
 
-/** 按钮上显示的编辑器名，如「在 Cursor 打开」 */
-export const editorLabel = (): string => labels[editorChoice.value] ?? '编辑器'
-
-/** 项目根绝对路径；`editor.exposeRoot: false` 时插件不下发 */
 const projectRoot = (): string => String((config as { root?: string }).root ?? '')
 
-export const editorEnabled = (): boolean =>
-  Boolean(projectRoot()) && (Boolean(editorConfig().preset) || editorOptions().length > 0)
+export const editorEnabled = (): boolean => Boolean(projectRoot()) && Boolean(editorTemplate())
+
+const fill = (template: string, abs: string, line: number): string =>
+  template
+    .replace(/\{fileEnc\}/g, encodeURIComponent(abs))
+    .replace(/\{file\}/g, abs)
+    .replace(/\{line\}/g, String(line))
 
 /** 拼出「在 IDE 中打开」的 URL；拿不到绝对路径时返回空串 */
 export const editorUrl = (rel: string, line = 1): string => {
   const root = projectRoot()
-  if (!root) return ''
+  const template = editorTemplate()
+  if (!root || !template) return ''
   const abs = `${root.replace(/\/+$/, '')}/${rel.replace(/^\.?\//, '')}`
-  const editor = editorConfig()
-
-  if (editorChoice.value === 'custom' && editor.custom) {
-    return editor.custom.replace('{file}', abs).replace('{line}', String(line))
-  }
-  const build = presets[editorChoice.value]
-  return build ? build(abs, line) : ''
+  return fill(template, abs, line)
 }
 
 /** 打开本地 IDE；没有可用 URL 时降级为复制绝对路径 */

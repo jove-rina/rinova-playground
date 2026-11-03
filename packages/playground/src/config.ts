@@ -49,8 +49,10 @@ export interface PlaygroundConfig {
     exposeRoot?: boolean
     /** 访问者能否在按钮里自己换编辑器，默认 true */
     allowChoice?: boolean
-    /** 可选的编辑器列表，默认 ['vscode','cursor','webstorm'] */
-    options?: Array<'vscode' | 'cursor' | 'webstorm' | 'custom'>
+    /** 可选的编辑器列表，默认内置的常用几个（vscode/cursor/windsurf/trae/zed/webstorm/idea/sublime） */
+    options?: string[]
+    /** 是否允许访问者填自定义协议模板（任意 IDE），默认 true */
+    allowCustom?: boolean
   }
 }
 
