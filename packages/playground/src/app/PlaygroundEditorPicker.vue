@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Check, PencilLine, SquarePen } from '@lucide/vue'
+import { Check, PencilLine, SquareArrowOutUpRight } from '@lucide/vue'
 import {
   allowCustomEditor,
   canChooseEditor,
@@ -68,7 +68,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
       :title="choosable ? `本地编辑器：${editorLabel()}（点这里改）` : `本地编辑器：${editorLabel()}`"
       @click="toggle"
     >
-      <SquarePen :size="14" :stroke-width="2" />
+      <SquareArrowOutUpRight :size="14" :stroke-width="2" />
     </button>
 
     <div v-if="open" class="pw-picker__menu" role="menu">

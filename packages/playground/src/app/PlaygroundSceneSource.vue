@@ -84,10 +84,10 @@ const copy = async (): Promise<void> => {
           :title="`用 ${editorLabel()} 打开`"
           @click="openInEditor(active?.rel ?? scene.rel)"
         >
-          <SquareArrowOutUpRight :size="14" />
+          <SquareArrowOutUpRight :size="14" :stroke-width="2" />
         </button>
         <button v-else type="button" class="pw-source__action" title="复制文件路径" @click="copyPath(scene.rel)">
-          <SquareArrowOutUpRight :size="14" />
+          <SquareArrowOutUpRight :size="14" :stroke-width="2" />
         </button>
       </div>
     </header>
