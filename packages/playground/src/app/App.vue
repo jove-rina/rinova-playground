@@ -197,6 +197,7 @@ onBeforeUnmount(() => {
     />
 
     <main class="pw-main">
+      <div class="pw-content">
       <template v-if="activePage">
         <PlaygroundPage
           :key="activePage.id"
@@ -220,7 +221,8 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="showPayload && hasPayload" class="pw-inspector">
-        <PlaygroundParamsPanel :theme="theme" />
+        <PlaygroundParamsPanel :theme="theme" :scene-name="activeSceneName" />
+      </div>
       </div>
 
       <div v-if="showCode && activeScene" class="pw-source-slot">
@@ -250,11 +252,18 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+.pw-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
 .pw-inspector {
-  flex: 0 0 38%;
-  min-height: 200px;
-  max-height: 360px;
-  border-top: 1px solid var(--rp-color-border);
+  flex: 0 0 320px;
+  width: 320px;
+  min-height: 0;
+  border-left: 1px solid var(--rp-color-border);
   overflow: hidden;
 }
 

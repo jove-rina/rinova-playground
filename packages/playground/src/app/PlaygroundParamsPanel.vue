@@ -12,14 +12,20 @@ import {
 } from '../payload/args'
 import { currentOutputSlots, type SceneOutputBinding } from '../payload/output'
 
-defineProps<{ theme: 'light' | 'dark' }>()
+const props = defineProps<{ theme: 'light' | 'dark'; sceneName?: string }>()
 
 const tab = ref<'args' | 'output'>('args')
 const snapshots = ref<Array<{ label: string; text: string }>>([])
 let timer: number | null = null
 
-const argsSlots = computed(() => currentArgsSlots.value)
-const outputSlots = computed(() => currentOutputSlots.value)
+/** 页内所有场景都挂着，面板只显示当前可见场景的槽位 */
+const belongsToActive = (sceneId: string): boolean =>
+  !props.sceneName || !sceneId || sceneId === props.sceneName
+
+const argsSlots = computed(() => currentArgsSlots.value.filter((slot) => belongsToActive(slot.sceneId)))
+const outputSlots = computed(() =>
+  currentOutputSlots.value.filter((slot) => belongsToActive(slot.sceneId))
+)
 
 const hasArgs = computed(() => argsSlots.value.length > 0)
 const hasOutput = computed(() => outputSlots.value.length > 0)

@@ -5,11 +5,15 @@ import CodeBlock from '../code/CodeBlock.vue'
 import PwApiBrief from '../components/PwApiBrief.vue'
 import PwSceneBoundary from '../components/PwSceneBoundary.vue'
 import { copyPath, editorEnabled, openInEditor } from '../code/openInEditor'
+import { provideSceneContext } from '../payload/context'
 import type { Component } from 'vue'
 import type { SceneDescriptor } from '../types'
 
 const props = defineProps<{ scene: SceneDescriptor }>()
 const emit = defineEmits<{ focus: [name: string] }>()
+
+/** 让场景内的 useSceneArgs / useSceneOutput 知道自己属于哪个场景 */
+provideSceneContext(props.scene.name)
 
 const rootEl = ref<HTMLElement | null>(null)
 const component = shallowRef<Component | null>(null)

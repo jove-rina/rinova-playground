@@ -1,10 +1,13 @@
 import { computed, onBeforeUnmount, onMounted, shallowRef } from 'vue'
+import { useSceneContext } from './context'
 
 export type SceneSnapshot = Record<string, unknown>
 
 export interface SceneOutputBinding {
   /** 槽位标识，缺省 `default` */
   key: string
+  /** 归属场景（页内多场景时只显示当前场景的槽位） */
+  sceneId: string
   /** 面板上显示的名字，等于传进来的 slot */
   label: string
   getter: () => SceneSnapshot
@@ -32,6 +35,7 @@ const sortSlots = (list: Slot[]): SceneOutputBinding[] =>
 export const useSceneOutput = (getter: () => SceneSnapshot, slot?: string): void => {
   const entry: Slot = {
     order: seq++,
+    sceneId: useSceneContext(),
     key: slot ?? 'default',
     label: slot ?? '',
     getter,
