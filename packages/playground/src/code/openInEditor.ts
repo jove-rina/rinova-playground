@@ -1,5 +1,6 @@
 import config from 'virtual:playground/config'
 import { toast } from '../components/toast'
+import { copyText } from './clipboard'
 
 interface EditorConfig {
   preset?: string
@@ -58,10 +59,6 @@ export const copyPath = async (rel: string, line = 1): Promise<void> => {
   const root = projectRoot()
   const abs = root ? `${root.replace(/\/+$/, '')}/${rel}` : rel
   const text = `${abs}:${line}`
-  try {
-    await navigator.clipboard.writeText(text)
-    toast(`已复制 ${text}`)
-  } catch {
-    toast('复制失败，请手动复制路径')
-  }
+  const ok = await copyText(text)
+  toast(ok ? `已复制 ${text}` : '复制失败，请手动复制路径')
 }

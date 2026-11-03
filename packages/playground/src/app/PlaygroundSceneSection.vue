@@ -4,6 +4,7 @@ import { Copy, SquareArrowOutUpRight } from '@lucide/vue'
 import CodeBlock from '../code/CodeBlock.vue'
 import PwApiBrief from '../components/PwApiBrief.vue'
 import PlaygroundSceneArgs from './PlaygroundSceneArgs.vue'
+import PlaygroundSceneSource from './PlaygroundSceneSource.vue'
 import PlaygroundSceneOutput from './PlaygroundSceneOutput.vue'
 import PwSceneBoundary from '../components/PwSceneBoundary.vue'
 import { copyPath, editorEnabled, openInEditor } from '../code/openInEditor'
@@ -22,8 +23,7 @@ provideSceneContext(props.scene.name)
 const rootEl = ref<HTMLElement | null>(null)
 const component = shallowRef<Component | null>(null)
 const mounted = ref(false)
-const raw = ref('')
-const sourceOpen = ref(false)
+
 
 const fileName = computed(() => props.scene.rel.split('/').pop() ?? props.scene.rel)
 const apiItems = computed(() => (props.scene.api ?? []).map((name) => ({ name })))
@@ -48,19 +48,6 @@ const mount = async (): Promise<void> => {
     console.warn(`[rinova-playground] 场景加载失败：${props.scene.rel}`, error)
   }
 }
-
-const loadSource = async (): Promise<void> => {
-  if (raw.value) return
-  try {
-    raw.value = await props.scene.raw()
-  } catch {
-    raw.value = '// 源码读取失败'
-  }
-}
-
-watch(sourceOpen, (open) => {
-  if (open) void loadSource()
-})
 
 onMounted(() => {
   if (typeof IntersectionObserver === 'undefined') {
@@ -132,10 +119,7 @@ defineExpose({ mount })
       <PlaygroundSceneOutput v-if="hasOutput" :scene-name="scene.name" />
     </div>
 
-    <details class="pw-scene__source" @toggle="sourceOpen = ($event.target as HTMLDetailsElement).open">
-      <summary>源码 · {{ fileName }}</summary>
-      <CodeBlock v-if="raw" :code="raw" lang="vue" />
-    </details>
+    <PlaygroundSceneSource :scene="scene" />
   </section>
 </template>
 
@@ -245,18 +229,6 @@ defineExpose({ mount })
     }
   }
 
-  &__source {
-    font-size: 12px;
-
-    summary {
-      cursor: pointer;
-      color: var(--rp-color-text-muted);
-
-      &:hover {
-        color: var(--rp-color-text);
-      }
-    }
-  }
 }
 
 @keyframes pw-skeleton {
