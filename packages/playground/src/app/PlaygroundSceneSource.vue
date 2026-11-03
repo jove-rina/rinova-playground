@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { Check, ChevronRight, Copy, FileCode2, SquareArrowOutUpRight } from '@lucide/vue'
 import CodeBlock from '../code/CodeBlock.vue'
-import { copyPath, editorEnabled, openInEditor } from '../code/openInEditor'
+import { copyPath, editorEnabled, editorLabel, openInEditor } from '../code/openInEditor'
 import { copyText } from '../code/clipboard'
 import { toast } from '../components/toast'
 import type { SceneDescriptor } from '../types'
@@ -66,28 +66,28 @@ const copy = async (): Promise<void> => {
   <section class="pw-source" :class="{ 'is-open': open }">
     <header class="pw-source__head">
       <button type="button" class="pw-source__toggle" @click="toggle">
-        <ChevronRight :size="13" class="pw-source__chevron" />
-        <FileCode2 :size="13" class="pw-source__icon" />
+        <ChevronRight :size="14" class="pw-source__chevron" />
+        <FileCode2 :size="14" class="pw-source__icon" />
         <span class="pw-source__label">源码</span>
         <span class="pw-source__file">{{ fileName }}</span>
       </button>
 
       <div class="pw-source__actions">
         <button type="button" class="pw-source__action" :title="copied ? '已复制' : '复制源码'" @click="copy">
-          <Check v-if="copied" :size="13" />
-          <Copy v-else :size="13" />
+          <Check v-if="copied" :size="14" />
+          <Copy v-else :size="14" />
         </button>
         <button
           v-if="editorEnabled()"
           type="button"
           class="pw-source__action"
-          title="在编辑器中打开"
+          :title="`用 ${editorLabel()} 打开`"
           @click="openInEditor(active?.rel ?? scene.rel)"
         >
-          <SquareArrowOutUpRight :size="13" />
+          <SquareArrowOutUpRight :size="14" />
         </button>
         <button v-else type="button" class="pw-source__action" title="复制文件路径" @click="copyPath(scene.rel)">
-          <SquareArrowOutUpRight :size="13" />
+          <SquareArrowOutUpRight :size="14" />
         </button>
       </div>
     </header>

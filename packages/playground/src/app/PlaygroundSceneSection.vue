@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vu
 import CodeBlock from '../code/CodeBlock.vue'
 import PwApiBrief from '../components/PwApiBrief.vue'
 import PlaygroundSceneArgs from './PlaygroundSceneArgs.vue'
-import PlaygroundEditorMenu from './PlaygroundEditorMenu.vue'
 import PlaygroundSceneSource from './PlaygroundSceneSource.vue'
 import PlaygroundSceneOutput from './PlaygroundSceneOutput.vue'
 import PwSceneBoundary from '../components/PwSceneBoundary.vue'
@@ -79,9 +78,6 @@ defineExpose({ mount })
           <span class="pw-scene__hash" aria-hidden="true">#</span>{{ scene.title }}
         </a>
       </h2>
-      <div class="pw-scene__actions">
-        <PlaygroundEditorMenu :rel="scene.rel" />
-      </div>
     </header>
 
     <p v-if="scene.description" class="pw-scene__desc">{{ scene.description }}</p>

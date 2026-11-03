@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { Code2, Maximize, Moon, SlidersHorizontal, Smartphone, Sun, Tablet } from '@lucide/vue'
+import PlaygroundEditorPicker from './PlaygroundEditorPicker.vue'
 import PlaygroundPageIndex from './PlaygroundPageIndex.vue'
 import PlaygroundSceneSection from './PlaygroundSceneSection.vue'
 import type { PageDescriptor, SceneDescriptor } from '../types'
@@ -121,6 +122,7 @@ onMounted(() => {
             <component :is="item.icon" :size="14" />
           </button>
         </div>
+        <PlaygroundEditorPicker />
         <button type="button" class="pw-head-btn" :title="theme === 'dark' ? '浅色' : '深色'" @click="emit('toggle-theme')">
           <Moon v-if="theme === 'light'" :size="14" />
           <Sun v-else :size="14" />
@@ -257,6 +259,7 @@ onMounted(() => {
 
 .pw-width {
   display: inline-flex;
+  gap: 2px;
   padding: 2px;
   border: 1px solid var(--rp-color-border);
   border-radius: 8px;
@@ -265,7 +268,7 @@ onMounted(() => {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 26px;
+    width: 24px;
     height: 24px;
     border: 0;
     border-radius: 6px;
@@ -273,13 +276,18 @@ onMounted(() => {
     color: var(--rp-color-text-muted);
     cursor: pointer;
 
+    &:hover {
+      color: var(--rp-color-text);
+    }
+
     &.is-active {
-      background: var(--rp-color-surface);
+      background: color-mix(in srgb, var(--rp-color-primary) 12%, transparent);
       color: var(--rp-color-primary);
     }
   }
 }
 
+/* 页头所有图标按钮统一：28×28、圆角 8、1px 边框、图标 14 */
 .pw-head-btn {
   display: inline-flex;
   align-items: center;
@@ -292,9 +300,14 @@ onMounted(() => {
   color: var(--rp-color-text-muted);
   cursor: pointer;
 
-  &:hover,
+  &:hover {
+    border-color: var(--rp-color-primary);
+    color: var(--rp-color-primary);
+  }
+
   &.is-active {
     border-color: var(--rp-color-primary);
+    background: color-mix(in srgb, var(--rp-color-primary) 10%, transparent);
     color: var(--rp-color-primary);
   }
 
