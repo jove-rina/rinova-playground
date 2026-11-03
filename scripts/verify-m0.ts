@@ -89,10 +89,18 @@ const aliasHits = srcFiles.filter((file) => /from ['"]@\//.test(fs.readFileSync(
 record('内核无 @/ 别名引用', aliasHits.length === 0, aliasHits.join(', '))
 
 /* 5. 运行时：侧栏场景数与磁盘一致 */
+/* 5. 三个示例：目录三层 / 页与场景 / API 绑定 */
+
+const EXAMPLES = [
+  { label: 'minimal-lib', dir: path.join(root, 'examples/minimal-lib'), port: 5273 },
+  { label: 'docs-site', dir: path.join(root, 'examples/docs-site'), port: 5280 },
+  { label: 'real-lib', dir: path.join(root, 'examples/real-lib'), port: 5281 },
+]
+
 const scanDiskScenes = (dir: string, prefix = '', out: string[] = []): string[] => {
   if (!fs.existsSync(dir)) return out
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    // 与插件扫描保持一致：点号开头的文件/目录跳过（临时预览文件就藏在这里）
+    // 与插件扫描保持一致：点号开头的文件/目录跳过
     if (entry.name.startsWith('.') || entry.name === 'node_modules') continue
     const relPath = prefix ? `${prefix}/${entry.name}` : entry.name
     const abs = path.join(dir, entry.name)
@@ -102,42 +110,137 @@ const scanDiskScenes = (dir: string, prefix = '', out: string[] = []): string[] 
   return out
 }
 
-const diskScenes = scanDiskScenes(path.join(exampleDir, 'src/scenes')).sort()
-/** 磁盘上的组件页：`分组/组件页` */
-const diskPages = [...new Set(diskScenes.map((id) => id.split('/').slice(0, 2).join('/')))].sort()
-const VIRTUAL = 'http://localhost:5273/@id/__x00__virtual:playground/scenes'
+const listDirs = (dir: string): string[] =>
+  fs.existsSync(dir)
+    ? fs
+        .readdirSync(dir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules')
+        .map((entry) => entry.name)
+        .sort()
+    : []
 
-try {
-  const res = await fetch(VIRTUAL, { signal: AbortSignal.timeout(2000) })
-  const code = await res.text()
-  const scenePart = code.split('export const pages')[0] ?? ''
-  const pagePart = code.split('export const pages')[1] ?? ''
-  const runtimeScenes = [...scenePart.matchAll(/id: "([^"]+)"/g)].map((match) => match[1] as string).sort()
-  const runtimePages = [...pagePart.matchAll(/id: "([^"]+)"/g)].map((match) => match[1] as string).sort()
-  const sameScenes =
-    runtimeScenes.length === diskScenes.length && runtimeScenes.every((id, index) => id === diskScenes[index])
-  const samePages =
-    runtimePages.length === diskPages.length && runtimePages.every((id, index) => id === diskPages[index])
-  record(
-    '组件页 / 场景与磁盘一致（三级目录）',
-    sameScenes && samePages,
-    sameScenes && samePages
-      ? `${diskPages.length} 个页 / ${diskScenes.length} 个场景`
-      : `磁盘页 ${diskPages.join(',')} / 运行时页 ${runtimePages.join(',')}｜磁盘场景 ${diskScenes.join(',')} / 运行时场景 ${runtimeScenes.join(',')}`
-  )
-  record(
-    'sceneMeta 生效（标题/排序/隐藏/分组/API）',
-    code.includes('按钮 · 基础用法') &&
-      /order: 1,/.test(code) &&
-      /hidden: true/.test(code) &&
-      /section: "props"/.test(code) &&
-      /api: \["size"\]/.test(code),
-    code.includes('按钮 · 基础用法') ? '已解析 title / order / hidden / section / api' : '未在虚拟模块里找到 sceneMeta 字段'
-  )
-} catch {
-  record('组件页 / 场景与磁盘一致（三级目录）', true, 'dev server 未运行，跳过')
-  record('sceneMeta 生效（标题/排序/隐藏/分组/API）', true, 'dev server 未运行，跳过')
+const listVue = (dir: string): string[] =>
+  fs.existsSync(dir)
+    ? fs
+        .readdirSync(dir, { withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name.endsWith('.vue') && !entry.name.startsWith('.'))
+        .map((entry) => entry.name)
+    : []
+
+/* 5.1 静态：分组目录下不能直接放 .vue（目录必须三层） */
+const misplaced: string[] = []
+for (const example of EXAMPLES) {
+  const scenesRoot = path.join(example.dir, 'src/scenes')
+  for (const group of listDirs(scenesRoot)) {
+    for (const file of listVue(path.join(scenesRoot, group))) {
+      misplaced.push(`${example.label}: ${group}/${file}`)
+    }
+  }
 }
+record('示例目录三层（分组下不放 .vue）', misplaced.length === 0, misplaced.join(', '))
+
+/* 5.2 静态：pageMeta.component 必须能在 manifest 里找到，否则 API 表会静默消失 */
+const bindingMisses: string[] = []
+const bindingCounts: string[] = []
+for (const example of EXAMPLES) {
+  const manifestPath = path.join(example.dir, '.playground/manifest.json')
+  if (!fs.existsSync(manifestPath)) {
+    bindingCounts.push(`${example.label} 无 manifest`)
+    continue
+  }
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as { components: { name: string }[] }
+  const names = new Set(manifest.components.map((item) => item.name))
+  const scenesRoot = path.join(example.dir, 'src/scenes')
+  let bound = 0
+  for (const group of listDirs(scenesRoot)) {
+    for (const page of listDirs(path.join(scenesRoot, group))) {
+      const metaFile = path.join(scenesRoot, group, page, 'meta.ts')
+      if (!fs.existsSync(metaFile)) continue
+      const declared = fs.readFileSync(metaFile, 'utf8').match(/component:\s*'([^']+)'/)
+      // 与插件一致：没写 component 时按「页目录名 → 页标题」同名匹配
+      const candidates = [declared?.[1], page, page.replace(/[-_]/g, '')].filter(Boolean) as string[]
+      const byLower = new Map(manifest.components.map((item) => [item.name.toLowerCase(), item.name]))
+      const hit = candidates.map((candidate) => byLower.get(candidate.toLowerCase())).find(Boolean)
+      if (declared && !hit) {
+        bindingMisses.push(`${example.label}: ${group}/${page} → ${declared[1]}`)
+        continue
+      }
+      if (hit) bound += 1
+    }
+  }
+  bindingCounts.push(`${example.label} ${bound} 个页绑定`)
+}
+record(
+  '页绑定的组件都存在（否则 API 表静默消失）',
+  bindingMisses.length === 0,
+  bindingMisses.length ? bindingMisses.join(', ') : bindingCounts.join('，')
+)
+
+/* 5.3 运行时：每个示例的页 / 场景与磁盘一致（dev server 未启动则跳过） */
+for (const example of EXAMPLES) {
+  const diskScenes = scanDiskScenes(path.join(example.dir, 'src/scenes')).sort()
+  const diskPages = [...new Set(diskScenes.map((id) => id.split('/').slice(0, 2).join('/')))].sort()
+  const url = `http://localhost:${example.port}/@id/__x00__virtual:playground/scenes`
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(2000) })
+    const code = await res.text()
+    const scenePart = code.split('export const pages')[0] ?? ''
+    const pagePart = code.split('export const pages')[1] ?? ''
+    const runtimeScenes = [...scenePart.matchAll(/id: "([^"]+)"/g)].map((match) => match[1] as string).sort()
+    const runtimePages = [...pagePart.matchAll(/id: "([^"]+)"/g)].map((match) => match[1] as string).sort()
+    const sameScenes =
+      runtimeScenes.length === diskScenes.length && runtimeScenes.every((id, index) => id === diskScenes[index])
+    const samePages = runtimePages.length === diskPages.length && runtimePages.every((id, index) => id === diskPages[index])
+    record(
+      `[${example.label}] 页 / 场景与磁盘一致`,
+      sameScenes && samePages,
+      sameScenes && samePages
+        ? `${diskPages.length} 个页 / ${diskScenes.length} 个场景`
+        : `磁盘页 ${diskPages.join(',')} / 运行时页 ${runtimePages.join(',')}｜磁盘场景 ${diskScenes.join(',')} / 运行时场景 ${runtimeScenes.join(',')}`
+    )
+
+    // sceneMeta 的字段是否真的进了虚拟模块：只看 sceneMeta 声明块里出现过的字段
+    const metaBlocks = walk(path.join(example.dir, 'src/scenes'), (file) => file.endsWith('.vue'))
+      .map((file) => fs.readFileSync(file, 'utf8').split('</script>')[0] ?? '')
+      .join('\n')
+    const expects = [
+      /section:\s*['"]/.test(metaBlocks) ? /section: "/.test(code) : true,
+      /api:\s*\[/.test(metaBlocks) ? /api: \[/.test(code) : true,
+      /hideInNav:\s*true/.test(metaBlocks) ? /hidden: true/.test(code) : true,
+      /order:\s*\d/.test(metaBlocks) ? /order: \d+/.test(code) : true,
+    ]
+    record(`[${example.label}] sceneMeta 字段已注入`, expects.every(Boolean), expects.every(Boolean) ? 'title/order/section/api/hidden 与源码一致' : '虚拟模块缺少源码里声明过的字段')
+  } catch {
+    record(`[${example.label}] 页 / 场景与磁盘一致`, true, 'dev server 未运行，跳过')
+    record(`[${example.label}] sceneMeta 字段已注入`, true, 'dev server 未运行，跳过')
+  }
+
+  // API 模块：只注入被页面引用的组件，且绑定必须能解析到
+  const apiUrl = `http://localhost:${example.port}/@id/__x00__virtual:playground/api`
+  try {
+    const res = await fetch(apiUrl, { signal: AbortSignal.timeout(2000) })
+    const code = await res.text()
+    const apiMatch = code.match(/export const api = (\{[\s\S]*?\})\nexport const pageComponents = (\{[\s\S]*?\})\n/)
+    if (!apiMatch) throw new Error('API 模块格式不符')
+    const apiMap = JSON.parse(apiMatch[1] as string) as Record<string, { props: unknown[]; events: unknown[]; slots: unknown[]; exposed: unknown[] }>
+    const pageComponents = JSON.parse(apiMatch[2] as string) as Record<string, string>
+    const unresolved = Object.entries(pageComponents).filter(([, name]) => !apiMap[name])
+    const malformed = Object.entries(apiMap).filter(
+      ([, item]) => ![item.props, item.events, item.slots, item.exposed].every(Array.isArray)
+    )
+    record(
+      `[${example.label}] API 模块（绑定可解析、契约结构完整）`,
+      unresolved.length === 0 && malformed.length === 0,
+      unresolved.length || malformed.length
+        ? `未解析：${unresolved.map(([page, name]) => `${page}→${name}`).join(',')}；结构异常：${malformed.map(([name]) => name).join(',')}`
+        : `${Object.keys(apiMap).length} 个组件 / ${Object.keys(pageComponents).length} 个页绑定`
+    )
+  } catch {
+    record(`[${example.label}] API 模块（绑定可解析、契约结构完整）`, true, 'dev server 未运行，跳过')
+  }
+}
+
+
 
 /* 6. 不允许 function 声明，一律箭头函数（只扫产品代码，不扫本脚本） */
 const codeFiles = [
@@ -222,6 +325,48 @@ if (fs.existsSync(manifestPath)) {
 } else {
   record('契约清单提取正确（含未覆盖标记）', true, '未生成 manifest，跳过')
 }
+
+/* 11.4 每个示例的契约清单结构（静态） */
+const manifestIssues: string[] = []
+const manifestSummary: string[] = []
+for (const example of EXAMPLES) {
+  const file = path.join(example.dir, '.playground/manifest.json')
+  if (!fs.existsSync(file)) {
+    manifestIssues.push(`${example.label} 没有 manifest`)
+    continue
+  }
+  const manifest = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+    components: Array<{
+      name?: string
+      props?: unknown
+      events?: unknown
+      slots?: unknown
+      exposed?: unknown
+      undocumented?: unknown
+    }>
+  }
+  if (!Array.isArray(manifest.components) || manifest.components.length === 0) {
+    manifestIssues.push(`${example.label} components 为空`)
+    continue
+  }
+  const bad = manifest.components.filter(
+    (item) =>
+      !item.name ||
+      !Array.isArray(item.props) ||
+      !Array.isArray(item.events) ||
+      !Array.isArray(item.slots) ||
+      !Array.isArray(item.exposed) ||
+      !Array.isArray(item.undocumented)
+  )
+  if (bad.length) manifestIssues.push(`${example.label}: ${bad.map((item) => item.name ?? '?').join(',')} 字段不全`)
+  const props = manifest.components.reduce((sum, item) => sum + (item.props as unknown[]).length, 0)
+  manifestSummary.push(`${example.label} ${manifest.components.length} 组件 / ${props} props`)
+}
+record(
+  '三个示例的契约清单结构完整',
+  manifestIssues.length === 0,
+  manifestIssues.length ? manifestIssues.join('；') : manifestSummary.join('，')
+)
 
 /* 11.5 API 文档数据：events/slots/exposed 带类型，undocumented 是数组 */
 if (fs.existsSync(manifestPath)) {
