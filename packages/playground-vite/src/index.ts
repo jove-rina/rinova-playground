@@ -7,10 +7,12 @@ import type { Plugin, ViteDevServer } from 'vite'
 
 const VIRTUAL_CONFIG = 'virtual:playground/config'
 const VIRTUAL_SCENES = 'virtual:playground/scenes'
+const VIRTUAL_EDITOR_CSS = 'virtual:playground/editor-css'
 
 const RESOLVED_ID: Record<string, string> = {
   [VIRTUAL_CONFIG]: `\0${VIRTUAL_CONFIG}`,
   [VIRTUAL_SCENES]: `\0${VIRTUAL_SCENES}`,
+  [VIRTUAL_EDITOR_CSS]: `\0${VIRTUAL_EDITOR_CSS}`,
 }
 
 const CONFIG_FILES = [
@@ -20,18 +22,19 @@ const CONFIG_FILES = [
   'playground.config.mjs',
 ]
 
+const PAGE_META_FILES = ['meta.ts', 'meta.mts', 'meta.js', 'meta.mjs']
+
 const DEFAULT_SCENES_DIR = 'src/scenes'
+
+/** 页内索引的分组顺序，空组不展示 */
+export const SECTION_ORDER = ['overview', 'props', 'events', 'exposes', 'slots'] as const
+export type SceneSection = (typeof SECTION_ORDER)[number]
 
 export interface PlaygroundPluginOptions {
   /** 指定配置文件路径，默认在项目根查找 playground.config.{ts,mts,js,mjs} */
   configFile?: string
   /** 覆盖配置里的 scenes 目录 */
   scenes?: string
-}
-
-interface ScannedFile {
-  abs: string
-  rel: string
 }
 
 interface SceneMeta {
@@ -41,28 +44,59 @@ interface SceneMeta {
   description?: string
   hideInNav?: boolean
   files?: string[]
+  section?: SceneSection
+  api?: string[]
+}
+
+interface PageMeta {
+  title?: string
+  description?: string
+  order?: number
+}
+
+interface SceneSource {
+  rel: string
+  url: string
 }
 
 interface SceneEntry {
+  /** `group/page/scene` */
   id: string
+  /** 场景文件名，页内锚点 */
+  name: string
   title: string
+  section: SceneSection
+  api?: string[]
+  /** 分组显示名 */
   group: string
+  groupDir: string
+  /** `groupDir/pageDir` */
+  pageId: string
+  /** 页标题 */
+  page: string
   /** 相对项目根的 URL，用于动态 import */
   url: string
   /** 绝对文件路径 */
   file: string
-  /** 相对项目根的路径，如 `src/scenes/button/basic.vue` */
+  /** 相对项目根的路径，如 `src/scenes/button/button/basic.vue` */
   rel: string
-  /** 同层排序权重，缺省排到最后 */
   order: number
   tags?: string[]
   description?: string
   /** sceneMeta.hideInNav：不进侧栏但可直接访问 */
   hidden?: boolean
   /** 源码面板的文件列表（场景自身 + sceneMeta.files） */
-  sources: { rel: string; url: string }[]
-  /** 合成条目（分组落地页）没有源文件 */
-  kind?: 'scene' | 'group-index'
+  sources: SceneSource[]
+}
+
+interface PageEntry {
+  /** `groupDir/pageDir` */
+  id: string
+  group: string
+  groupDir: string
+  title: string
+  description?: string
+  order: number
 }
 
 interface PlaygroundUserConfig {
@@ -76,8 +110,8 @@ interface PlaygroundUserConfig {
   tsconfig?: string
   /** 分组目录名 → 侧栏显示名 */
   groups?: Record<string, string>
-  /** 是否给每个分组合成「概览」落地页 */
-  groupIndex?: boolean
+  /** 本地 IDE 打开：{ preset: 'vscode' | 'cursor' | 'webstorm', custom?: string } */
+  editor?: { preset?: string; custom?: string; exposeRoot?: boolean }
   [key: string]: unknown
 }
 
@@ -93,23 +127,13 @@ const titleize = (name: string): string => {
 
 const toPosix = (value: string): string => value.split(path.sep).join('/')
 
-const walkScenes = (dir: string, prefix = ''): ScannedFile[] => {
-  const out: ScannedFile[] = []
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue
-    const abs = path.join(dir, entry.name)
-    const rel = prefix ? `${prefix}/${entry.name}` : entry.name
-    if (entry.isDirectory()) {
-      out.push(...walkScenes(abs, rel))
-    } else if (entry.isFile() && entry.name.endsWith('.vue')) {
-      out.push({ abs, rel })
-    }
-  }
-  return out
-}
+const isSection = (value: unknown): value is SceneSection =>
+  typeof value === 'string' && (SECTION_ORDER as readonly string[]).includes(value)
 
 /**
  * rinova-playground 的 Vite 插件。
+ *
+ * 目录约定（必须三层）：`scenes/<分组>/<组件页>/<场景>.vue`
  *
  * ```ts
  * import { playground } from '@rinova/playground-vite'
@@ -122,6 +146,7 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
   let resolved = false
   let scenesDir = ''
   let scenes: SceneEntry[] = []
+  let pages: PageEntry[] = []
   let configFile = ''
   let isBuild = false
   let outDir = 'dist'
@@ -137,7 +162,21 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
     return ''
   }
 
-  /** 执行场景 `<script>` 块里的 `export const sceneMeta`，只取可序列化的导航字段 */
+  const listDirs = (dir: string): string[] =>
+    fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules')
+      .map((entry) => entry.name)
+      .sort()
+
+  const listVue = (dir: string): string[] =>
+    fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.vue') && !entry.name.startsWith('.'))
+      .map((entry) => entry.name)
+      .sort()
+
+  /** 执行场景 `<script>` 块里的 `export const sceneMeta`，只取可序列化的字段 */
   const readSceneMeta = async (file: string): Promise<SceneMeta> => {
     let source = ''
     try {
@@ -162,6 +201,8 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
         description: typeof meta.description === 'string' ? meta.description : undefined,
         hideInNav: meta.hideInNav === true ? true : undefined,
         files: Array.isArray(meta.files) ? meta.files.map(String) : undefined,
+        section: isSection(meta.section) ? meta.section : undefined,
+        api: Array.isArray(meta.api) ? meta.api.map(String).filter(Boolean) : undefined,
       }
     } catch (error) {
       console.warn(
@@ -172,71 +213,140 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
     }
   }
 
-  const scanScenes = async (): Promise<SceneEntry[]> => {
-    if (!fs.existsSync(scenesDir)) return []
+  /**
+   * 场景样式约束：`<style>` 必须带 scoped，且不许命中 :root / html / body。
+   * 不做沙箱（不引 iframe / Shadow DOM），靠这条把最容易串味的写法挡在门口。
+   */
+  const checkSceneStyle = (file: string): void => {
+    let source = ''
+    try {
+      source = fs.readFileSync(file, 'utf8')
+    } catch {
+      return
+    }
+    const relPath = toPosix(path.relative(root, file))
+    const { descriptor } = parseSfc(source, { filename: file })
+    for (const block of descriptor.styles) {
+      if (!block.scoped) {
+        console.warn(`[rinova-playground] ${relPath} 的 <style> 没有 scoped，样式会污染其它场景`)
+      }
+      if (/(^|[},]\s*)(:root|html|body)\b/.test(block.content)) {
+        console.warn(`[rinova-playground] ${relPath} 的样式命中了 :root / html / body，会影响整个页面`)
+      }
+    }
+  }
 
-    const entries: SceneEntry[] = []
-    /** 分组目录名 → 显示名，顺带收集给合成落地页用 */
-    const groupLabels = new Map<string, string>()
+  /** 页级 meta（可选）：`<页>/meta.ts` 导出 `pageMeta` */
+  const readPageMeta = async (dir: string): Promise<PageMeta> => {
+    for (const name of PAGE_META_FILES) {
+      const file = path.join(dir, name)
+      if (!fs.existsSync(file)) continue
+      try {
+        const mod = (await jiti.import(file)) as { pageMeta?: PageMeta }
+        const meta = mod?.pageMeta ?? {}
+        return {
+          title: typeof meta.title === 'string' ? meta.title : undefined,
+          description: typeof meta.description === 'string' ? meta.description : undefined,
+          order: typeof meta.order === 'number' ? meta.order : undefined,
+        }
+      } catch (error) {
+        console.warn(
+          `[rinova-playground] ${toPosix(path.relative(root, file))} 的 pageMeta 解析失败：`,
+          error instanceof Error ? error.message : error
+        )
+      }
+    }
+    return {}
+  }
 
-    for (const { abs, rel } of walkScenes(scenesDir)) {
-      const id = rel.replace(/\.vue$/, '')
-      const segments = id.split('/')
-      const groupRaw = segments.length > 1 ? (segments[0] as string) : ''
-      const nameRaw = segments.at(-1) as string
-      const meta = await readSceneMeta(abs)
-      const relPath = toPosix(path.relative(root, abs))
-      const groupLabel = groupRaw
-        ? (config.groups?.[groupRaw] ?? titleize(groupRaw))
-        : 'Scenes'
-      if (groupRaw) groupLabels.set(groupRaw, groupLabel)
+  const scanScenes = async (): Promise<void> => {
+    scenes = []
+    pages = []
+    if (!fs.existsSync(scenesDir)) return
 
-      entries.push({
-        id,
-        title: meta.title ?? titleize(nameRaw),
-        group: groupLabel,
-        url: `/${relPath}`,
-        file: abs,
-        rel: relPath,
-        order: typeof meta.order === 'number' ? meta.order : Number.MAX_SAFE_INTEGER,
-        tags: meta.tags,
-        description: meta.description,
-        hidden: meta.hideInNav,
-        sources: [
-          { rel: relPath, url: `/${relPath}` },
-          ...(meta.files ?? [])
-            .map((file) => {
-              const absExtra = path.resolve(root, file)
-              if (!fs.existsSync(absExtra)) {
-                console.warn(`[rinova-playground] ${relPath} 的 sceneMeta.files 里 ${file} 不存在，已跳过`)
-                return null
-              }
-              const relExtra = toPosix(path.relative(root, absExtra))
-              return { rel: relExtra, url: `/${relExtra}` }
-            })
-            .filter((entry): entry is { rel: string; url: string } => entry !== null),
-        ],
-      })
+    const ignored = (file: string, reason: string): void => {
+      console.warn(`[rinova-playground] 忽略 ${toPosix(path.relative(root, file))}：${reason}`)
     }
 
-    // 每个分组合成一个「概览」落地页（groupIndex: true 时）
-    if (config.groupIndex) {
-      for (const [dir, label] of groupLabels) {
-        entries.push({
-          id: `${dir}/__index`,
-          title: '概览',
-          group: label,
-          url: '',
-          file: '',
-          rel: '',
-          order: Number.MIN_SAFE_INTEGER,
-          kind: 'group-index',
-          sources: [],
+    for (const name of listVue(scenesDir)) {
+      ignored(path.join(scenesDir, name), '场景必须放在 分组/组件页/ 目录下')
+    }
+
+    for (const groupDir of listDirs(scenesDir)) {
+      const groupAbs = path.join(scenesDir, groupDir)
+      const groupLabel = config.groups?.[groupDir] ?? titleize(groupDir)
+
+      for (const name of listVue(groupAbs)) {
+        ignored(path.join(groupAbs, name), '分组目录下不能直接放场景，请放进组件页目录')
+      }
+
+      for (const pageDir of listDirs(groupAbs)) {
+        const pageAbs = path.join(groupAbs, pageDir)
+        const pageId = `${groupDir}/${pageDir}`
+        const meta = await readPageMeta(pageAbs)
+        const pageTitle = meta.title ?? titleize(pageDir)
+
+        pages.push({
+          id: pageId,
+          group: groupLabel,
+          groupDir,
+          title: pageTitle,
+          description: meta.description,
+          order: typeof meta.order === 'number' ? meta.order : Number.MAX_SAFE_INTEGER,
         })
+
+        const seen = new Set<string>()
+        for (const fileName of listVue(pageAbs)) {
+          const name = fileName.replace(/\.vue$/, '')
+          if (seen.has(name)) {
+            ignored(path.join(pageAbs, fileName), `同一页内场景名重复（${name}）`)
+            continue
+          }
+          seen.add(name)
+
+          const abs = path.join(pageAbs, fileName)
+          checkSceneStyle(abs)
+          const sceneMeta = await readSceneMeta(abs)
+          const relPath = toPosix(path.relative(root, abs))
+
+          scenes.push({
+            id: `${pageId}/${name}`,
+            name,
+            title: sceneMeta.title ?? titleize(name),
+            section: sceneMeta.section ?? 'overview',
+            api: sceneMeta.api,
+            group: groupLabel,
+            groupDir,
+            pageId,
+            page: pageTitle,
+            url: `/${relPath}`,
+            file: abs,
+            rel: relPath,
+            order: typeof sceneMeta.order === 'number' ? sceneMeta.order : Number.MAX_SAFE_INTEGER,
+            tags: sceneMeta.tags,
+            description: sceneMeta.description,
+            hidden: sceneMeta.hideInNav,
+            sources: [
+              { rel: relPath, url: `/${relPath}` },
+              ...(sceneMeta.files ?? [])
+                .map((file) => {
+                  const absExtra = path.resolve(root, file)
+                  if (!fs.existsSync(absExtra)) {
+                    console.warn(`[rinova-playground] ${relPath} 的 sceneMeta.files 里 ${file} 不存在，已跳过`)
+                    return null
+                  }
+                  const relExtra = toPosix(path.relative(root, absExtra))
+                  return { rel: relExtra, url: `/${relExtra}` }
+                })
+                .filter((entry): entry is SceneSource => entry !== null),
+            ],
+          })
+        }
       }
     }
 
-    return entries.sort((a, b) => a.order - b.order || a.rel.localeCompare(b.rel))
+    scenes.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+    pages.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
   }
 
   /** 生成契约清单（.playground/manifest.json + llms.txt + coverage.md） */
@@ -275,7 +385,7 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
       config = {}
     }
     scenesDir = path.resolve(root, options.scenes ?? config.scenes ?? DEFAULT_SCENES_DIR)
-    scenes = await scanScenes()
+    await scanScenes()
     resolved = true
   }
 
@@ -288,35 +398,37 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
   }
 
   const configModuleCode = (): string => {
-    const payload = { ...config, sceneCount: scenes.length }
+    const payload = {
+      ...config,
+      /** 供「在本地 IDE 打开」拼绝对路径；exposeRoot: false 时清空 */
+      root: config.editor?.exposeRoot === false ? '' : root,
+      sceneCount: scenes.length,
+      pageCount: pages.length,
+    }
     return `export default ${JSON.stringify(payload)}`
   }
 
   const scenesModuleCode = (): string => {
-    const entries = scenes
+    const sceneCode = scenes
       .map((scene) => {
-        const isIndex = scene.kind === 'group-index'
-        const sources = isIndex
-          ? '[]'
-          : `[${scene.sources
-              .map(
-                (source) => `{ rel: ${JSON.stringify(source.rel)}, raw: () => import(${JSON.stringify(
-                  `${source.url}?raw`
-                )}).then((mod) => mod.default) }`
-              )
-              .join(', ')}]`
-        const loader = isIndex
-          ? '() => Promise.resolve({ default: null })'
-          : `() => import(${JSON.stringify(scene.url)})`
-        const rawLoader = isIndex
-          ? "() => Promise.resolve('')"
-          : `() => import(${JSON.stringify(`${scene.url}?raw`)}).then((mod) => mod.default)`
+        const sources = `[${scene.sources
+          .map(
+            (source) => `{ rel: ${JSON.stringify(source.rel)}, raw: () => import(${JSON.stringify(
+              `${source.url}?raw`
+            )}).then((mod) => mod.default) }`
+          )
+          .join(', ')}]`
 
         return `  {
     id: ${JSON.stringify(scene.id)},
+    name: ${JSON.stringify(scene.name)},
     title: ${JSON.stringify(scene.title)},
+    section: ${JSON.stringify(scene.section)},
+    api: ${JSON.stringify(scene.api ?? null)},
     group: ${JSON.stringify(scene.group)},
-    kind: ${JSON.stringify(scene.kind ?? 'scene')},
+    groupDir: ${JSON.stringify(scene.groupDir)},
+    pageId: ${JSON.stringify(scene.pageId)},
+    page: ${JSON.stringify(scene.page)},
     path: ${JSON.stringify(scene.url)},
     file: ${JSON.stringify(scene.file)},
     rel: ${JSON.stringify(scene.rel)},
@@ -326,14 +438,31 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
     description: ${JSON.stringify(scene.description ?? null)},
     hidden: ${JSON.stringify(scene.hidden === true)},
     sources: ${sources},
-    load: ${loader},
-    raw: ${rawLoader}
+    load: () => import(${JSON.stringify(scene.url)}),
+    raw: () => import(${JSON.stringify(`${scene.url}?raw`)}).then((mod) => mod.default)
   }`
       })
       .join(',\n')
 
+    const pageCode = pages
+      .map(
+        (page) => `  {
+    id: ${JSON.stringify(page.id)},
+    group: ${JSON.stringify(page.group)},
+    groupDir: ${JSON.stringify(page.groupDir)},
+    title: ${JSON.stringify(page.title)},
+    description: ${JSON.stringify(page.description ?? null)},
+    order: ${JSON.stringify(page.order)}
+  }`
+      )
+      .join(',\n')
+
     return `export const scenes = [
-${entries}
+${sceneCode}
+]
+
+export const pages = [
+${pageCode}
 ]
 `
   }
@@ -375,9 +504,13 @@ ${entries}
       }
     },
 
-    resolveId: (id) => (id === VIRTUAL_CONFIG || id === VIRTUAL_SCENES ? RESOLVED_ID[id] : null),
+    resolveId: (id) => RESOLVED_ID[id] ?? null,
 
     load: async (id) => {
+      if (id === RESOLVED_ID[VIRTUAL_EDITOR_CSS]) {
+        // 转发给使用方的解析器：编辑器样式只在打开代码面板时才拉
+        return "import '@rinova/playground/editor.css'"
+      }
       if (id !== RESOLVED_ID[VIRTUAL_CONFIG] && id !== RESOLVED_ID[VIRTUAL_SCENES]) return null
       await ensureReady()
       return id === RESOLVED_ID[VIRTUAL_CONFIG] ? configModuleCode() : scenesModuleCode()
@@ -389,7 +522,7 @@ ${entries}
 
       const refresh = (file?: string): void => {
         const target = file ?? ''
-        const isScene = target.startsWith(scenesDir) && target.endsWith('.vue')
+        const isScene = target.startsWith(scenesDir) && /\.(vue|ts)$/.test(target)
         if (!isScene) return
         invalidateScenes(server)
         server.ws.send({ type: 'full-reload' })

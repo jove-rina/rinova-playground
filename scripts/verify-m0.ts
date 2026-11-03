@@ -103,27 +103,40 @@ const scanDiskScenes = (dir: string, prefix = '', out: string[] = []): string[] 
 }
 
 const diskScenes = scanDiskScenes(path.join(exampleDir, 'src/scenes')).sort()
+/** 磁盘上的组件页：`分组/组件页` */
+const diskPages = [...new Set(diskScenes.map((id) => id.split('/').slice(0, 2).join('/')))].sort()
 const VIRTUAL = 'http://localhost:5273/@id/__x00__virtual:playground/scenes'
 
 try {
   const res = await fetch(VIRTUAL, { signal: AbortSignal.timeout(2000) })
   const code = await res.text()
-  const runtimeScenes = [...code.matchAll(/id: "([^"]+)"/g)].map((match) => match[1] as string).sort()
-  const same =
+  const scenePart = code.split('export const pages')[0] ?? ''
+  const pagePart = code.split('export const pages')[1] ?? ''
+  const runtimeScenes = [...scenePart.matchAll(/id: "([^"]+)"/g)].map((match) => match[1] as string).sort()
+  const runtimePages = [...pagePart.matchAll(/id: "([^"]+)"/g)].map((match) => match[1] as string).sort()
+  const sameScenes =
     runtimeScenes.length === diskScenes.length && runtimeScenes.every((id, index) => id === diskScenes[index])
+  const samePages =
+    runtimePages.length === diskPages.length && runtimePages.every((id, index) => id === diskPages[index])
   record(
-    '侧栏场景与磁盘一致',
-    same,
-    same ? `${diskScenes.length} 个` : `磁盘 ${diskScenes.join(',')} / 运行时 ${runtimeScenes.join(',')}`
+    '组件页 / 场景与磁盘一致（三级目录）',
+    sameScenes && samePages,
+    sameScenes && samePages
+      ? `${diskPages.length} 个页 / ${diskScenes.length} 个场景`
+      : `磁盘页 ${diskPages.join(',')} / 运行时页 ${runtimePages.join(',')}｜磁盘场景 ${diskScenes.join(',')} / 运行时场景 ${runtimeScenes.join(',')}`
   )
   record(
-    'sceneMeta 生效（标题/排序/隐藏）',
-    code.includes('按钮 · 基础用法') && /order: 1,/.test(code) && /hidden: true/.test(code),
-    code.includes('按钮 · 基础用法') ? '已解析 title / order / hidden' : '未在虚拟模块里找到 sceneMeta 字段'
+    'sceneMeta 生效（标题/排序/隐藏/分组/API）',
+    code.includes('按钮 · 基础用法') &&
+      /order: 1,/.test(code) &&
+      /hidden: true/.test(code) &&
+      /section: "props"/.test(code) &&
+      /api: \["size"\]/.test(code),
+    code.includes('按钮 · 基础用法') ? '已解析 title / order / hidden / section / api' : '未在虚拟模块里找到 sceneMeta 字段'
   )
 } catch {
-  record('侧栏场景与磁盘一致', true, 'dev server 未运行，跳过')
-  record('sceneMeta 生效（标题/排序/隐藏）', true, 'dev server 未运行，跳过')
+  record('组件页 / 场景与磁盘一致（三级目录）', true, 'dev server 未运行，跳过')
+  record('sceneMeta 生效（标题/排序/隐藏/分组/API）', true, 'dev server 未运行，跳过')
 }
 
 /* 6. 不允许 function 声明，一律箭头函数（只扫产品代码，不扫本脚本） */
@@ -158,13 +171,41 @@ const jsSources = [
 ]
 record('产品代码无 JS 源文件（只用 TS）', jsSources.length === 0, jsSources.map(rel).join(', '))
 
-/* 9. 路由必须是 History，不许用 hash */
-const hashHits = walk(path.join(pkgDir, 'src'), (file) => /\.(ts|vue)$/.test(file)).filter((file) =>
-  /location\.hash|hashchange/.test(fs.readFileSync(file, 'utf8'))
+/* 9. 路由必须走 pathname（History API）；hash 只允许作为页内场景锚点 */
+const routerFiles = walk(path.join(pkgDir, 'src'), (file) => /\.(ts|vue)$/.test(file))
+const appSource = fs.existsSync(path.join(pkgDir, 'src/app/App.vue'))
+  ? fs.readFileSync(path.join(pkgDir, 'src/app/App.vue'), 'utf8')
+  : ''
+const hashRouteHits = routerFiles.filter((file) => {
+  const text = fs.readFileSync(file, 'utf8')
+  // 形如 '#/xxx' 的 hash 路由，或直接给 location.hash 赋值来导航
+  return /['"`]#\//.test(text) || /location\.hash\s*=/.test(text)
+})
+const usesHistory = /history\.(push|replace)State/.test(appSource) && !/window\.location\.hash\s*=/.test(appSource)
+record(
+  '路由使用 History API（hash 仅作锚点）',
+  hashRouteHits.length === 0 && usesHistory,
+  usesHistory ? 'pathname + pushState/replaceState；#场景名 仅作页内锚点' : `可疑文件：${hashRouteHits.map(rel).join(', ')}`
 )
-record('路由使用 History API（无 hash）', hashHits.length === 0, hashHits.map(rel).join(', '))
 
-/* 11. 契约清单：组件 props 提取 + 未覆盖标记 */
+/* 11. 场景样式约束：必须 scoped，且不许命中 :root / html / body（不做沙箱，靠约束兜） */
+const sceneStyleOffenders: string[] = []
+for (const file of walk(path.join(exampleDir, 'src/scenes'), (item) => item.endsWith('.vue'))) {
+  const text = fs.readFileSync(file, 'utf8')
+  for (const match of text.matchAll(/<style([^>]*)>([\s\S]*?)<\/style>/g)) {
+    const attrs = match[1] ?? ''
+    const body = match[2] ?? ''
+    if (!/scoped/.test(attrs)) sceneStyleOffenders.push(`${rel(file)}（缺 scoped）`)
+    if (/(^|[},]\s*)(:root|html|body)\b/.test(body)) sceneStyleOffenders.push(`${rel(file)}（命中 :root/html/body）`)
+  }
+}
+record(
+  '场景样式约束（scoped、不碰全局选择器）',
+  sceneStyleOffenders.length === 0,
+  sceneStyleOffenders.join(', ')
+)
+
+/* 12. 契约清单：组件 props 提取 + 未覆盖标记 */
 const manifestPath = path.join(exampleDir, '.playground/manifest.json')
 if (fs.existsSync(manifestPath)) {
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as {

@@ -2,42 +2,53 @@
 import { computed, ref } from 'vue'
 import { Search } from '@lucide/vue'
 import PwInput from '../components/PwInput.vue'
-import type { SceneDescriptor } from '../types'
+
+interface NavPage {
+  id: string
+  title: string
+  count: number
+}
+
+interface NavGroup {
+  name: string
+  pages: NavPage[]
+}
 
 const props = defineProps<{
   title: string
-  groups: { name: string; items: SceneDescriptor[] }[]
-  activeId: string
+  groups: NavGroup[]
+  activePageId: string
   sceneCount: number
 }>()
 
-defineEmits<{ select: [id: string] }>()
+const emit = defineEmits<{ select: [id: string] }>()
 
 const query = ref('')
 const inputRef = ref<InstanceType<typeof PwInput> | null>(null)
 
-/** 分组头点击聚焦该组的合成落地页；没有落地页时返回 null */
-const groupIndexId = (group: { items: SceneDescriptor[] }): string | null =>
-  group.items.find((item) => item.kind === 'group-index')?.id ?? null
-
-const focusSearch = () => {
+const focusSearch = (): void => {
   inputRef.value?.focus()
 }
 
 defineExpose({ focusSearch })
 
 const filteredGroups = computed(() => {
-  const q = query.value.trim().toLowerCase()
-  if (!q) return props.groups
+  const needle = query.value.trim().toLowerCase()
+  if (!needle) return props.groups
   return props.groups
     .map((group) => ({
       name: group.name,
-      items: group.items.filter(
-        (item) => item.title.toLowerCase().includes(q) || item.id.toLowerCase().includes(q)
+      pages: group.pages.filter(
+        (page) =>
+          page.title.toLowerCase().includes(needle) ||
+          page.id.toLowerCase().includes(needle) ||
+          group.name.toLowerCase().includes(needle)
       ),
     }))
-    .filter((group) => group.items.length > 0)
+    .filter((group) => group.pages.length > 0)
 })
+
+const pageCount = computed(() => props.groups.reduce((sum, group) => sum + group.pages.length, 0))
 </script>
 
 <template>
@@ -48,7 +59,7 @@ const filteredGroups = computed(() => {
     </div>
 
     <div class="pw-sidebar__search">
-      <PwInput ref="inputRef" v-model="query" size="sm" placeholder="搜索场景">
+      <PwInput ref="inputRef" v-model="query" size="sm" placeholder="搜索组件页">
         <template #prefix>
           <Search :size="13" class="pw-sidebar__search-icon" />
         </template>
@@ -60,34 +71,27 @@ const filteredGroups = computed(() => {
 
     <nav class="pw-sidebar__nav">
       <section v-for="group in filteredGroups" :key="group.name" class="pw-nav-group">
-        <div class="pw-nav-group__title">
-          <button
-            v-if="groupIndexId(group)"
-            type="button"
-            class="pw-nav-group__title-btn"
-            :class="{ 'is-active': groupIndexId(group) === activeId }"
-            @click="$emit('select', groupIndexId(group) as string)"
-          >
-            {{ group.name }}
-          </button>
-          <template v-else>{{ group.name }}</template>
-        </div>
+        <div class="pw-nav-group__title">{{ group.name }}</div>
         <button
-          v-for="item in group.items"
-          :key="item.id"
+          v-for="page in group.pages"
+          :key="page.id"
           type="button"
           class="pw-nav-item"
-          :class="{ 'is-active': item.id === activeId }"
-          @click="$emit('select', item.id)"
+          :class="{ 'is-active': page.id === activePageId }"
+          :title="`${page.title} · ${page.count} 个场景`"
+          @click="emit('select', page.id)"
         >
-          {{ item.title }}
+          <span class="pw-nav-item__title">{{ page.title }}</span>
+          <span class="pw-nav-item__count">{{ page.count }}</span>
         </button>
       </section>
 
-      <p v-if="!filteredGroups.length" class="pw-sidebar__empty">没有匹配的场景</p>
+      <p v-if="!filteredGroups.length" class="pw-sidebar__empty">没有匹配的组件页</p>
     </nav>
 
-    <footer class="pw-sidebar__footer">{{ sceneCount }} 个场景</footer>
+    <footer class="pw-sidebar__footer">
+      {{ pageCount }} 个组件页 · {{ sceneCount }} 个场景
+    </footer>
   </aside>
 </template>
 
@@ -96,9 +100,9 @@ const filteredGroups = computed(() => {
 
 .pw-sidebar {
   display: flex;
+  flex: 0 0 260px;
   flex-direction: column;
-  width: 264px;
-  flex: 0 0 264px;
+  width: 260px;
   height: 100%;
   border-right: 1px solid var(--rp-color-border);
   background: var(--rp-color-surface);
@@ -170,27 +174,10 @@ const filteredGroups = computed(() => {
   text-transform: uppercase;
 }
 
-.pw-nav-group__title-btn {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  cursor: pointer;
-
-  &:hover {
-    color: var(--rp-color-text);
-  }
-
-  &.is-active {
-    color: var(--rp-color-primary);
-  }
-}
-
 .pw-nav-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   padding: 6px 8px;
   border: 0;
@@ -201,9 +188,20 @@ const filteredGroups = computed(() => {
   font-size: 13px;
   text-align: left;
   cursor: pointer;
+}
+
+.pw-nav-item__title {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.pw-nav-item__count {
+  color: var(--rp-color-text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 .pw-nav-item:hover {

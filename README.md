@@ -29,7 +29,7 @@ pnpm install
 pnpm dev        # 示例项目  → http://localhost:5273
 pnpm dev:docs   # 文档站     → http://localhost:5280
 pnpm build      # 构建示例（产物含 manifest.json / llms.txt / coverage.md）
-pnpm verify     # 11 项验收
+pnpm verify     # 14 项验收
 pnpm verify:mcp # MCP server 冒烟（7 项）
 ```
 
@@ -40,6 +40,15 @@ pnpm verify:mcp # MCP server 冒烟（7 项）
 | `examples/minimal-lib` | 最小接入，5 个场景 | `pnpm dev` → :5273 |
 | `examples/docs-site` | 文档站，用框架自己搭自己 | `pnpm dev:docs` → :5280 |
 | `examples/real-lib` | 真实组件库接入（shadcn-vue + Tailwind 4，11 个组件 / 19 props） | `pnpm --filter @rinova/example-real-lib dev` → :5281 |
+
+## 目录约定
+
+```text
+src/scenes/<分组>/<组件页>/<场景>.vue
+src/scenes/<分组>/<组件页>/meta.ts   # 可选：页标题 / 说明 / 排序
+```
+
+一个组件页 = 一个页面，页内纵向排该组件的所有场景，右侧是 `概要 / Props / Events / Exposes / Slots` 索引。
 
 ## MCP
 

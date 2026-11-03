@@ -30,7 +30,7 @@ export const loadMonaco = (): Promise<typeof Monaco> => {
       import('monaco-editor/editor/editor.api'),
       import('monaco-editor/language/typescript/monaco.contribution'),
       import('@shikijs/monaco'),
-      import('@rinova/playground/editor.css'),
+      import('virtual:playground/editor-css'),
     ])
 
     // 只保留 editor + ts 两个 worker：展示场景不需要 json/css/html 的语义能力

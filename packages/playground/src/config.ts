@@ -39,11 +39,15 @@ export interface PlaygroundConfig {
    * 例如 `{ 'tao-common': 'Tao 通用组件' }`；不配时用目录名首字母大写化。
    */
   groups?: Record<string, string>
-  /**
-   * 是否为每个分组自动合成一个「概览」落地页（列出该组所有场景）。
-   * 合成页没有源文件，不算进「N 个场景」的计数。默认 false。
-   */
-  groupIndex?: boolean
+  /** 本地 IDE 打开：preset 决定用哪个编辑器的 URL scheme */
+  editor?: {
+    /** 'vscode' | 'cursor' | 'webstorm' | 'custom' */
+    preset?: 'vscode' | 'cursor' | 'webstorm' | 'custom'
+    /** preset = 'custom' 时的模板，支持 {file} / {line} */
+    custom?: string
+    /** 是否把项目根绝对路径写进产物，默认 true；对外发布时设为 false（按钮降级为复制路径） */
+    exposeRoot?: boolean
+  }
 }
 
 export const defineConfig = (config: PlaygroundConfig): PlaygroundConfig => config

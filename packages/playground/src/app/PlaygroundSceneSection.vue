@@ -1,0 +1,232 @@
+<script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { Copy, SquareArrowOutUpRight } from '@lucide/vue'
+import CodeBlock from '../code/CodeBlock.vue'
+import PwApiBrief from '../components/PwApiBrief.vue'
+import PwSceneBoundary from '../components/PwSceneBoundary.vue'
+import { copyPath, editorEnabled, openInEditor } from '../code/openInEditor'
+import type { Component } from 'vue'
+import type { SceneDescriptor } from '../types'
+
+const props = defineProps<{ scene: SceneDescriptor }>()
+const emit = defineEmits<{ focus: [name: string] }>()
+
+const rootEl = ref<HTMLElement | null>(null)
+const component = shallowRef<Component | null>(null)
+const mounted = ref(false)
+const raw = ref('')
+const sourceOpen = ref(false)
+
+const fileName = computed(() => props.scene.rel.split('/').pop() ?? props.scene.rel)
+const apiItems = computed(() => (props.scene.api ?? []).map((name) => ({ name })))
+
+let observer: IntersectionObserver | null = null
+
+/** 进入视口附近才挂载，一页十几个场景也只跑 2~3 个实例 */
+const mount = async (): Promise<void> => {
+  if (mounted.value) return
+  mounted.value = true
+  try {
+    const mod = await props.scene.load()
+    component.value = mod.default
+  } catch (error) {
+    console.warn(`[rinova-playground] 场景加载失败：${props.scene.rel}`, error)
+  }
+}
+
+const loadSource = async (): Promise<void> => {
+  if (raw.value) return
+  try {
+    raw.value = await props.scene.raw()
+  } catch {
+    raw.value = '// 源码读取失败'
+  }
+}
+
+watch(sourceOpen, (open) => {
+  if (open) void loadSource()
+})
+
+onMounted(() => {
+  if (typeof IntersectionObserver === 'undefined') {
+    void mount()
+    return
+  }
+  observer = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        void mount()
+        observer?.disconnect()
+      }
+    },
+    { rootMargin: '600px 0px' }
+  )
+  if (rootEl.value) observer.observe(rootEl.value)
+})
+
+onBeforeUnmount(() => observer?.disconnect())
+
+/** 页内索引点击落到本场景时，立即挂载 */
+defineExpose({ mount })
+</script>
+
+<template>
+  <section :id="scene.name" ref="rootEl" class="pw-scene">
+    <header class="pw-scene__head">
+      <h2 class="pw-scene__title">
+        <a :href="`#${scene.name}`" class="pw-scene__anchor" @click.prevent="emit('focus', scene.name)">
+          <span class="pw-scene__hash" aria-hidden="true">#</span>{{ scene.title }}
+        </a>
+      </h2>
+      <div class="pw-scene__actions">
+        <button
+          v-if="editorEnabled()"
+          type="button"
+          class="pw-scene__action"
+          title="在本地编辑器中打开这个场景文件"
+          @click="openInEditor(scene.rel)"
+        >
+          <SquareArrowOutUpRight :size="13" />
+          在编辑器打开
+        </button>
+        <button
+          v-else
+          type="button"
+          class="pw-scene__action"
+          title="复制文件路径"
+          @click="copyPath(scene.rel)"
+        >
+          <Copy :size="13" />
+          复制路径
+        </button>
+      </div>
+    </header>
+
+    <p v-if="scene.description" class="pw-scene__desc">{{ scene.description }}</p>
+    <PwApiBrief v-if="apiItems.length" :items="apiItems" />
+
+    <div class="pw-scene__preview">
+      <PwSceneBoundary :title="scene.title" :file="scene.rel">
+        <component :is="component" v-if="component" />
+        <div v-else class="pw-scene__skeleton" aria-hidden="true" />
+      </PwSceneBoundary>
+    </div>
+
+    <details class="pw-scene__source" @toggle="sourceOpen = ($event.target as HTMLDetailsElement).open">
+      <summary>源码 · {{ fileName }}</summary>
+      <CodeBlock v-if="raw" :code="raw" lang="vue" />
+    </details>
+  </section>
+</template>
+
+<style scoped lang="less">
+.pw-scene {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--rp-color-border);
+  scroll-margin-top: 16px;
+
+  &:last-child {
+    border-bottom: 0;
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  &__anchor {
+    color: var(--rp-color-text);
+    text-decoration: none;
+
+    &:hover .pw-scene__hash {
+      color: var(--rp-color-primary);
+    }
+  }
+
+  &__hash {
+    margin-right: 6px;
+    color: var(--rp-color-text-muted);
+    font-weight: 400;
+    transition: color 0.15s ease;
+  }
+
+  &__actions {
+    margin-left: auto;
+  }
+
+  &__action {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border: 1px solid var(--rp-color-border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--rp-color-text-muted);
+    font-size: 11.5px;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+
+    &:hover {
+      border-color: var(--rp-color-primary);
+      color: var(--rp-color-primary);
+    }
+  }
+
+  &__desc {
+    margin: 0;
+    color: var(--rp-color-text-muted);
+    font-size: 12.5px;
+    line-height: 1.7;
+  }
+
+  &__preview {
+    padding: 18px;
+    border: 1px solid var(--rp-color-border);
+    border-radius: var(--rp-radius);
+    background: var(--rp-color-bg);
+  }
+
+  &__skeleton {
+    height: 88px;
+    border-radius: 6px;
+    background: linear-gradient(
+      90deg,
+      var(--rp-color-surface) 0%,
+      color-mix(in srgb, var(--rp-color-border) 40%, transparent) 50%,
+      var(--rp-color-surface) 100%
+    );
+    background-size: 200% 100%;
+    animation: pw-skeleton 1.2s linear infinite;
+  }
+
+  &__source {
+    font-size: 12px;
+
+    summary {
+      cursor: pointer;
+      color: var(--rp-color-text-muted);
+
+      &:hover {
+        color: var(--rp-color-text);
+      }
+    }
+  }
+}
+
+@keyframes pw-skeleton {
+  to {
+    background-position: -200% 0;
+  }
+}
+</style>

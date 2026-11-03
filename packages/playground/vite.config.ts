@@ -34,7 +34,13 @@ export default defineConfig({
     },
     rolldownOptions: {
       // editor.css 是我们自己发布的分包样式，要留给使用方的打包器按需加载
-      external: ['vue', 'virtual:playground/config', 'virtual:playground/scenes', '@rinova/playground/editor.css'],
+      external: [
+        'vue',
+        'virtual:playground/config',
+        'virtual:playground/scenes',
+        'virtual:playground/editor-css',
+        '@rinova/playground/editor.css',
+      ],
       output: {
         assetFileNames: (assetInfo) => (assetInfo.name?.endsWith('.css') ? 'style.css' : 'assets/[name][extname]'),
       },

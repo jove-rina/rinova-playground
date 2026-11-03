@@ -1,70 +1,61 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
 import config from 'virtual:playground/config'
-import { scenes } from 'virtual:playground/scenes'
+import { pages, scenes } from 'virtual:playground/scenes'
 import PwToastHost from '../components/PwToastHost.vue'
 import { currentArgs } from '../payload/args'
 import { currentOutput } from '../payload/output'
 import '../styles/theme.less'
+import PlaygroundPage from './PlaygroundPage.vue'
 import PlaygroundParamsPanel from './PlaygroundParamsPanel.vue'
-import PlaygroundGroupIndex from './PlaygroundGroupIndex.vue'
 import PlaygroundSidebar from './PlaygroundSidebar.vue'
 import PlaygroundSourcePanel from './PlaygroundSourcePanel.vue'
-import PlaygroundStage from './PlaygroundStage.vue'
-import PlaygroundToolbar from './PlaygroundToolbar.vue'
-import type { SceneDescriptor } from '../types'
+import type { PageDescriptor, SceneDescriptor } from '../types'
 
 const STORAGE_KEY = 'rinova-playground:ui-theme'
 const title = config.title ?? 'Playground'
 
-/** config.groups 的声明顺序即侧栏分组顺序；未声明的组排到后面 */
-const groupLabelOrder = Object.values(config.groups ?? {})
-const groupRank = (name: string): number => {
-  const index = groupLabelOrder.indexOf(name)
-  return index === -1 ? Number.MAX_SAFE_INTEGER : index
+const isPage = (value: PageDescriptor): boolean => value.group !== ''
+
+/** 每个页下的场景（hidden 不进索引与侧栏，但锚点仍可直达） */
+const scenesOfPage = (pageId: string): SceneDescriptor[] =>
+  scenes.filter((scene) => scene.pageId === pageId)
+
+/** 侧栏计数与页内索引只算可见场景 */
+const visibleScenesOfPage = (pageId: string): SceneDescriptor[] =>
+  scenesOfPage(pageId).filter((scene) => !scene.hidden)
+
+interface NavGroup {
+  name: string
+  pages: { id: string; title: string; count: number }[]
 }
 
-const groups = computed(() => {
-  const map = new Map<string, SceneDescriptor[]>()
-  for (const scene of scenes) {
-    if (scene.hidden) continue
-    const list = map.get(scene.group) ?? []
-    list.push(scene)
-    map.set(scene.group, list)
+const pageGroups = computed<NavGroup[]>(() => {
+  const map = new Map<string, NavGroup>()
+  for (const page of pages.filter(isPage)) {
+    const entry: NavGroup = map.get(page.group) ?? { name: page.group, pages: [] }
+    const count = visibleScenesOfPage(page.id).length
+    if (count === 0) continue
+    entry.pages.push({ id: page.id, title: page.title, count })
+    map.set(page.group, entry)
   }
-  return [...map.entries()]
-    .map(([name, items]) => ({
-      name,
-      items,
-      // 合成落地页的 order 是 MIN_SAFE_INTEGER，不参与分组权重，否则所有组并列
-      weight: items
-        .filter((item) => item.kind !== 'group-index')
-        .reduce((min, item) => Math.min(min, item.order), Number.MAX_SAFE_INTEGER),
-    }))
-    // config.groups 的声明顺序优先；未声明的组按权重 + 名称排
-    .sort(
-      (a, b) =>
-        groupRank(a.name) - groupRank(b.name) ||
-        a.weight - b.weight ||
-        a.name.localeCompare(b.name)
-    )
+  return [...map.values()]
 })
 
-const visibleCount = computed(
-  () => scenes.filter((scene) => !scene.hidden && scene.kind !== 'group-index').length
+const visibleCount = computed(() => scenes.filter((scene) => !scene.hidden).length)
+
+const firstPageId = computed(
+  () => pages.filter(isPage).find((page) => visibleScenesOfPage(page.id).length > 0)?.id ?? ''
 )
-const activeId = ref(scenes.find((scene) => !scene.hidden)?.id ?? scenes[0]?.id ?? '')
-const activeScene = computed(() => scenes.find((scene) => scene.id === activeId.value) ?? scenes[0])
-
-/** 当前是分组落地页时，列出该组的普通场景（不含其它合成页） */
-const groupSceneItems = computed(() => {
-  const scene = activeScene.value
-  if (!scene || scene.kind !== 'group-index') return []
-  return scenes.filter(
-    (item) => item.group === scene.group && item.kind !== 'group-index' && !item.hidden
-  )
-})
-const isGroupIndex = computed(() => activeScene.value?.kind === 'group-index')
+const activePageId = ref(firstPageId.value)
+const activePage = computed(
+  () => pages.find((page) => page.id === activePageId.value) ?? pages.filter(isPage)[0]
+)
+const activeScenes = computed(() => (activePage.value ? scenesOfPage(activePage.value.id) : []))
+const activeSceneName = ref(activeScenes.value[0]?.name ?? '')
+const activeScene = computed(
+  () => activeScenes.value.find((scene) => scene.name === activeSceneName.value) ?? activeScenes.value[0]
+)
 
 const showCode = ref(false)
 const showPayload = ref(false)
@@ -73,6 +64,7 @@ const hasPayload = computed(() => currentArgs.value !== null || currentOutput.va
 watch(hasPayload, (value) => {
   if (!value) showPayload.value = false
 })
+
 const sidebarRef = ref<InstanceType<typeof PlaygroundSidebar> | null>(null)
 const width = ref<'auto' | 'tablet' | 'mobile'>('auto')
 
@@ -95,51 +87,68 @@ watchEffect(() => {
   document.documentElement.dataset.pwTheme = theme.value
 })
 
-const toggleTheme = () => {
+const toggleTheme = (): void => {
   preference.value = theme.value === 'dark' ? 'light' : 'dark'
   localStorage.setItem(STORAGE_KEY, preference.value)
 }
 
-/* ---------------- 路由（History API） ---------------- */
+/* ---------------- 路由（History API）：/<分组>/<组件页>#<场景> ---------------- */
 
 const basePath = (() => {
   // routeBase 只影响场景 URL 前缀，不影响 Vite 的 base（MPA / 多入口部署用）；
   // 单站部署沿用 base。
-  const raw = config.routeBase ?? config.base ?? '/'
+  const raw = (config as { routeBase?: string }).routeBase ?? config.base ?? '/'
   return raw.endsWith('/') ? raw : `${raw}/`
 })()
 
-/** 从 location.pathname 解析出场景 id（去掉 base 与尾部斜杠） */
-const sceneIdFromPath = (): string => {
-  const path = decodeURIComponent(window.location.pathname)
-  const trimmed = path.startsWith(basePath) ? path.slice(basePath.length) : path.replace(/^\//, '')
+const pathSegments = (): string => {
+  const pathname = decodeURIComponent(window.location.pathname)
+  const trimmed = pathname.startsWith(basePath) ? pathname.slice(basePath.length) : pathname.replace(/^\//, '')
   return trimmed.replace(/\/+$/, '')
 }
 
-const readLocation = () => {
-  const id = sceneIdFromPath()
-  if (id && scenes.some((scene) => scene.id === id)) activeId.value = id
+const hashName = (): string => decodeURIComponent(window.location.hash.replace(/^#/, ''))
+
+const readLocation = (): void => {
+  const pageId = pathSegments()
+  if (pageId && pages.some((page) => page.id === pageId)) {
+    activePageId.value = pageId
+  }
+  const name = hashName()
+  if (name && activeScenes.value.some((scene) => scene.name === name)) {
+    activeSceneName.value = name
+  }
 }
 
-watch(activeId, (id) => {
-  if (!id) return
-  const target = `${basePath}${id}`
+const writeLocation = (): void => {
+  const pageId = activePageId.value
+  if (!pageId) return
+  const target = `${basePath}${pageId}`
   if (decodeURIComponent(window.location.pathname) !== target) {
     window.history.pushState(null, '', target)
   }
+}
+
+/** 切换页时重置到该页第一个场景 */
+watch(activePageId, (id) => {
+  writeLocation()
+  const list = scenesOfPage(id)
+  activeSceneName.value = list[0]?.name ?? ''
+  window.history.replaceState(null, '', `${basePath}${id}`)
 })
+
+const focusScene = (name: string): void => {
+  activeSceneName.value = name
+  window.history.replaceState(null, '', `${basePath}${activePageId.value}#${name}`)
+}
 
 /* ---------------- 快捷键 ---------------- */
 
-const onKeydown = (event: KeyboardEvent) => {
+const onKeydown = (event: KeyboardEvent): void => {
   const meta = event.metaKey || event.ctrlKey
   if (meta && event.key.toLowerCase() === 'k') {
     event.preventDefault()
     sidebarRef.value?.focusSearch()
-    return
-  }
-  if (meta && event.key === '.') {
-    event.preventDefault()
     return
   }
   if (event.key === 'Escape' && showCode.value) {
@@ -151,7 +160,7 @@ const onKeydown = (event: KeyboardEvent) => {
 
 const media = window.matchMedia('(prefers-color-scheme: dark)')
 
-const onMediaChange = (event: MediaQueryListEvent) => {
+const onMediaChange = (event: MediaQueryListEvent): void => {
   systemDark.value = event.matches
 }
 
@@ -160,16 +169,18 @@ onMounted(() => {
   systemDark.value = media.matches
   media.addEventListener('change', onMediaChange)
   readLocation()
-  if (activeId.value && sceneIdFromPath() !== activeId.value) {
-    window.history.replaceState(null, '', `${basePath}${activeId.value}`)
+  if (activePageId.value) {
+    window.history.replaceState(null, '', `${basePath}${activePageId.value}${window.location.hash}`)
   }
   window.addEventListener('popstate', readLocation)
+  window.addEventListener('hashchange', readLocation)
   window.addEventListener('keydown', onKeydown)
 })
 
 onBeforeUnmount(() => {
   media.removeEventListener('change', onMediaChange)
   window.removeEventListener('popstate', readLocation)
+  window.removeEventListener('hashchange', readLocation)
   window.removeEventListener('keydown', onKeydown)
 })
 </script>
@@ -179,41 +190,40 @@ onBeforeUnmount(() => {
     <PlaygroundSidebar
       ref="sidebarRef"
       :title="title"
-      :groups="groups"
-      :active-id="activeId"
+      :groups="pageGroups"
+      :active-page-id="activePageId"
       :scene-count="visibleCount"
-      @select="activeId = $event"
+      @select="activePageId = $event"
     />
 
     <main class="pw-main">
-      <PlaygroundToolbar
-        v-if="activeScene"
-        :group="activeScene.group"
-        :title="activeScene.title"
-        :show-code="showCode"
-        :show-payload="showPayload"
-        :has-payload="hasPayload"
-        :width="width"
-        :theme="theme"
-        @toggle-code="showCode = !showCode"
-        @toggle-payload="showPayload = !showPayload"
-        @update:width="width = $event"
-        @toggle-theme="toggleTheme"
-      />
-
-      <div class="pw-body">
-        <PlaygroundGroupIndex
-          v-if="isGroupIndex && activeScene"
-          :group="activeScene.group"
-          :items="groupSceneItems"
-          @select="activeId = $event"
+      <template v-if="activePage">
+        <PlaygroundPage
+          :key="activePage.id"
+          :page="activePage"
+          :scenes="activeScenes"
+          :width="width"
+          :theme="theme"
+          :show-code="showCode"
+          :show-payload="showPayload"
+          :has-payload="hasPayload"
+          @update:width="width = $event"
+          @update:active="activeSceneName = $event"
+          @toggle-theme="toggleTheme"
+          @toggle-code="showCode = !showCode"
+          @toggle-payload="showPayload = !showPayload"
+          @focus="focusScene"
         />
-        <PlaygroundStage v-else-if="activeScene" :scene="activeScene" :width="width" />
-        <div v-else class="pw-empty">没有找到任何场景，请在 scenes 目录下新建 .vue 文件。</div>
-        <PlaygroundParamsPanel v-if="showPayload && hasPayload" :theme="theme" />
+      </template>
+      <div v-else class="pw-empty">
+        没有找到任何场景。目录约定：<code>src/scenes/&lt;分组&gt;/&lt;组件页&gt;/&lt;场景&gt;.vue</code>
       </div>
 
-      <div v-if="showCode && activeScene && !isGroupIndex" class="pw-source-slot">
+      <div v-if="showPayload && hasPayload" class="pw-inspector">
+        <PlaygroundParamsPanel :theme="theme" />
+      </div>
+
+      <div v-if="showCode && activeScene" class="pw-source-slot">
         <PlaygroundSourcePanel :scene="activeScene" :theme="theme" @close="showCode = false" />
       </div>
     </main>
@@ -235,15 +245,17 @@ onBeforeUnmount(() => {
 
 .pw-main {
   display: flex;
-  flex-direction: column;
   flex: 1;
+  flex-direction: column;
   min-width: 0;
 }
 
-.pw-body {
-  display: flex;
-  flex: 1;
-  min-height: 0;
+.pw-inspector {
+  flex: 0 0 38%;
+  min-height: 200px;
+  max-height: 360px;
+  border-top: 1px solid var(--rp-color-border);
+  overflow: hidden;
 }
 
 .pw-source-slot {
@@ -260,5 +272,12 @@ onBeforeUnmount(() => {
   justify-content: center;
   color: var(--rp-color-text-muted);
   font-size: 13px;
+
+  code {
+    padding: 1px 5px;
+    border: 1px solid var(--rp-color-border);
+    border-radius: 4px;
+    font-family: var(--rp-font-mono);
+  }
 }
 </style>

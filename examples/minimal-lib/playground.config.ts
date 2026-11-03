@@ -5,5 +5,6 @@ export default defineConfig({
   scenes: 'src/scenes',
   port: 5273,
   components: ['src/lib/**/*.vue'],
-
+  groups: { button: 'Button', card: 'Card', internal: 'Internal' },
+  editor: { preset: 'vscode' },
 })

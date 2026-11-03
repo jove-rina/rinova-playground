@@ -1,38 +1,49 @@
 import type { Component } from 'vue'
 
-/** 一个被扫描到的场景。由 @rinova/playground-vite 在构建期生成。 */
+/** 页内索引分组，顺序固定：概要 → Props → Events → Exposes → Slots */
+export type SceneSection = 'overview' | 'props' | 'events' | 'exposes' | 'slots'
+
+/** 一个被扫描到的场景。目录约定：`scenes/<分组>/<组件页>/<场景>.vue` */
 export interface SceneDescriptor {
-  /** 场景 id，等于相对 scenes 根目录的路径（不含扩展名），如 `button/basic` */
+  /** `group/page/scene` */
   id: string
-  /**
-   * 条目类型：普通场景 / 由框架合成的分组落地页（`groupIndex: true` 时每个分组自动有一个）。
-   * 落地页没有源文件，`load` / `raw` 不会被调用。
-   */
-  kind?: 'scene' | 'group-index'
-  /** 侧栏显示的标题，默认由文件名推导 */
+  /** 场景文件名，页内锚点 */
+  name: string
+  /** 侧栏外的场景标题，默认由文件名推导 */
   title: string
-  /** 一级分组名，等于场景所在目录名（按目录首字母大写化） */
+  section: SceneSection
+  /** sceneMeta.api：本场景覆盖的公开 API 名 */
+  api: string[] | null
+  /** 分组显示名 */
   group: string
+  groupDir: string
+  /** `groupDir/pageDir` */
+  pageId: string
+  /** 页标题 */
+  page: string
   /** 相对项目根的 URL，用于动态 import */
   path: string
-  /** 绝对文件路径，用于展示与错误提示 */
+  /** 绝对文件路径 */
   file: string
-  /** 相对项目根的路径，如 `src/scenes/button/basic.vue` */
+  /** 相对项目根的路径，如 `src/scenes/button/button/basic.vue` */
   rel: string
-  /** 源码语言（固定 'vue'，源码面板高亮用） */
   lang: 'vue'
-  /** 同层排序权重，未声明时为 Number.MAX_SAFE_INTEGER */
   order: number
-  /** sceneMeta.tags */
   tags: string[] | null
-  /** sceneMeta.description，显示在预览区上方 */
   description: string | null
-  /** sceneMeta.hideInNav：不进侧栏但可通过 URL 直达 */
   hidden: boolean
-  /** 懒加载场景组件 */
   load: () => Promise<{ default: Component }>
-  /** 懒加载场景源码（?raw） */
   raw: () => Promise<string>
-  /** 源码面板的文件列表：场景自身在前，sceneMeta.files 在后 */
   sources: { rel: string; raw: () => Promise<string> }[]
+}
+
+/** 组件页 */
+export interface PageDescriptor {
+  /** `groupDir/pageDir` */
+  id: string
+  group: string
+  groupDir: string
+  title: string
+  description: string | null
+  order: number
 }

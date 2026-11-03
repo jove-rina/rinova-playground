@@ -17,8 +17,26 @@ export interface SceneMeta {
   }
   /** 额外要展示的源码文件（相对项目根） */
   files?: string[]
-  /** 隐藏于侧栏，但可通过链接直达 */
+  /** 隐藏于页内索引与侧栏计数，但可通过锚点直达 */
   hideInNav?: boolean
+  /**
+   * 页内索引分组，默认 'overview'。
+   * 顺序固定：概要 → Props → Events → Exposes → Slots
+   */
+  section?: 'overview' | 'props' | 'events' | 'exposes' | 'slots'
+  /** 本场景覆盖的公开 API 名（如 ['disabled']），显示在场景标题下方 */
+  api?: string[]
+}
+
+/** 组件页级元信息：写在 `<页>/meta.ts`，导出 `pageMeta` */
+export interface PageMeta {
+  /** 页标题，默认按目录名首字母大写化 */
+  title?: string
+  /** 页说明，显示在页头 */
+  description?: string
+  /** 分组内排序，小的在前 */
+  order?: number
 }
 
 export const defineSceneMeta = (meta: SceneMeta): SceneMeta => meta
+export const definePageMeta = (meta: PageMeta): PageMeta => meta

@@ -5,4 +5,6 @@ export default defineConfig({
   scenes: 'src/scenes',
   port: 5281,
   components: ['src/components/ui/**/*.vue'],
+  groups: { action: '操作', display: '展示', form: '表单' },
+  editor: { preset: 'vscode' },
 })
