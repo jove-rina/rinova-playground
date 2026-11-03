@@ -11,15 +11,15 @@ const props = defineProps<{
   width: 'auto' | 'tablet' | 'mobile'
   theme: 'light' | 'dark'
   showCode: boolean
-  showPayload: boolean
-  hasPayload: boolean
+  showArgs: boolean
+  hasArgs: boolean
 }>()
 
 const emit = defineEmits<{
   'update:width': [value: 'auto' | 'tablet' | 'mobile']
   'toggle-theme': []
   'toggle-code': []
-  'toggle-payload': []
+  'toggle-args': []
   'update:active': [name: string]
   focus: [name: string]
 }>()
@@ -128,10 +128,10 @@ onMounted(() => {
         <button
           type="button"
           class="pw-head-btn"
-          :class="{ 'is-active': showPayload }"
-          :disabled="!hasPayload"
-          title="入参 / 出参"
-          @click="emit('toggle-payload')"
+          :class="{ 'is-active': showArgs }"
+          :disabled="!hasArgs"
+          title="显示 / 隐藏参数区"
+          @click="emit('toggle-args')"
         >
           <SlidersHorizontal :size="14" />
         </button>
@@ -158,6 +158,8 @@ onMounted(() => {
               :key="scene.id"
               :ref="setSectionRef(scene.name)"
               :scene="scene"
+              :show-args="showArgs"
+              :theme="theme"
               @focus="jump"
             />
           </div>

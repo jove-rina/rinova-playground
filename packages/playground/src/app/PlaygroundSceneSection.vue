@@ -3,13 +3,15 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vu
 import { Copy, SquareArrowOutUpRight } from '@lucide/vue'
 import CodeBlock from '../code/CodeBlock.vue'
 import PwApiBrief from '../components/PwApiBrief.vue'
+import PlaygroundSceneArgs from './PlaygroundSceneArgs.vue'
+import PlaygroundSceneOutput from './PlaygroundSceneOutput.vue'
 import PwSceneBoundary from '../components/PwSceneBoundary.vue'
 import { copyPath, editorEnabled, openInEditor } from '../code/openInEditor'
 import { provideSceneContext } from '../payload/context'
 import type { Component } from 'vue'
 import type { SceneDescriptor } from '../types'
 
-const props = defineProps<{ scene: SceneDescriptor }>()
+const props = defineProps<{ scene: SceneDescriptor; showArgs?: boolean; theme?: 'light' | 'dark' }>()
 const emit = defineEmits<{ focus: [name: string] }>()
 
 /** 让场景内的 useSceneArgs / useSceneOutput 知道自己属于哪个场景 */
@@ -109,12 +111,16 @@ defineExpose({ mount })
     <p v-if="scene.description" class="pw-scene__desc">{{ scene.description }}</p>
     <PwApiBrief v-if="apiItems.length" :items="apiItems" />
 
+    <PlaygroundSceneArgs v-if="showArgs !== false" :scene-name="scene.name" />
+
     <div class="pw-scene__preview">
       <PwSceneBoundary :title="scene.title" :file="scene.rel">
         <component :is="component" v-if="component" />
         <div v-else class="pw-scene__skeleton" aria-hidden="true" />
       </PwSceneBoundary>
     </div>
+
+    <PlaygroundSceneOutput :scene-name="scene.name" :theme="theme ?? 'light'" />
 
     <details class="pw-scene__source" @toggle="sourceOpen = ($event.target as HTMLDetailsElement).open">
       <summary>源码 · {{ fileName }}</summary>
