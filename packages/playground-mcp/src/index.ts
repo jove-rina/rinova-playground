@@ -5,19 +5,27 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 
+interface ManifestField {
+  name: string
+  type: string
+  required: boolean
+  description: string
+}
+
 interface ManifestProp {
   name: string
   type: string
   required: boolean
   default: string
   description: string
+  fields?: ManifestField[]
 }
 
 interface ManifestComponent {
   name: string
   rel: string
   props: ManifestProp[]
-  events: { name: string; type: string; signature: string; description: string }[]
+  events: { name: string; type: string; signature: string; description: string; fields?: ManifestField[] }[]
   slots: { name: string; type: string; description: string }[]
   exposed: { name: string; type: string; description: string }[]
   scenes: string[]
@@ -45,9 +53,16 @@ const locate = (root: string, rel: string, needle: string): string => {
   const abs = path.join(root, rel)
   if (!fs.existsSync(abs)) return rel
   const lines = fs.readFileSync(abs, 'utf8').split('\n')
-  const pattern = new RegExp(`\\b${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`)
-  const index = lines.findIndex((line) => pattern.test(line))
-  return index >= 0 ? `${rel}:${index + 1}` : rel
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  // 先找声明行（`rows?:` / `rows:` / `rows =`），避免命中 JSDoc 里提到的同名词
+  const declaration = new RegExp(`^\\s*(?:readonly\\s+)?${escaped}\\??\\s*[:=]`)
+  const word = new RegExp(`\\b${escaped}\\b`)
+  const isComment = (line: string): boolean => /^\s*(?:\*|\/\/|<!--)/.test(line)
+  const codeLines = lines.map((line, index) => ({ line, index })).filter((item) => !isComment(item.line))
+  const hit =
+    codeLines.find((item) => declaration.test(item.line)) ??
+    codeLines.find((item) => word.test(item.line))
+  return hit ? `${rel}:${hit.index + 1}` : rel
 }
 
 const parseArgs = (argv: string[]): { project: string; manifest: string } => {
@@ -88,6 +103,11 @@ const formatComponent = (root: string, component: ManifestComponent, manifest: M
       `- ${prop.name}: ${prop.type}${flags ? ` (${flags})` : ''}  ← ${locate(root, component.rel, prop.name)}`
     )
     if (prop.description) lines.push(`  ${prop.description}`)
+    for (const field of prop.fields ?? []) {
+      lines.push(
+        `  · ${field.name}: ${field.type}${field.required ? ' (必填)' : ''}${field.description ? ` — ${field.description}` : ''}`
+      )
+    }
   }
 
   if (component.events.length) {
@@ -95,6 +115,9 @@ const formatComponent = (root: string, component: ManifestComponent, manifest: M
     for (const event of component.events) {
       lines.push(`- ${event.name} ${event.type}${event.description ? ` — ${event.description}` : ''}`)
       if (event.signature) lines.push(`  ${event.signature}`)
+      for (const field of event.fields ?? []) {
+        lines.push(`  · ${field.name}: ${field.type}${field.description ? ` — ${field.description}` : ''}`)
+      }
     }
   }
   if (component.slots.length) {

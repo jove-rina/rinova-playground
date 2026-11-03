@@ -57,6 +57,7 @@ const rows = computed(() => {
       required: item.required,
       description: item.description || notesOf('props', item.name),
       signature: '',
+      fields: item.fields ?? [],
       demos: scenesOf('props', item.name),
     }))
   }
@@ -69,6 +70,7 @@ const rows = computed(() => {
       required: false,
       description: item.description || notesOf('events', item.name),
       signature: item.signature,
+      fields: item.fields ?? [],
       demos: scenesOf('events', item.name),
     }))
   }
@@ -81,6 +83,7 @@ const rows = computed(() => {
       required: false,
       description: item.description || notesOf('slots', item.name),
       signature: '',
+      fields: [],
       demos: scenesOf('slots', item.name),
     }))
   }
@@ -92,9 +95,16 @@ const rows = computed(() => {
     required: false,
     description: item.description || notesOf('exposed', item.name),
     signature: '',
+    fields: [],
     demos: scenesOf('exposed', item.name),
   }))
 })
+
+/** 对象类型 prop 的字段展开 */
+const expanded = ref<Record<string, boolean>>({})
+const toggleFields = (key: string): void => {
+  expanded.value = { ...expanded.value, [key]: !expanded.value[key] }
+}
 
 /** 高亮来自场景内标签的点击 */
 const highlighted = ref('')
@@ -156,15 +166,24 @@ const copyType = async (text: string): Promise<void> => {
         </tr>
       </thead>
       <tbody>
+        <template v-for="row in rows" :key="row.key">
         <tr
-          v-for="row in rows"
-          :key="row.key"
           :data-api="row.name"
           :class="{ 'is-missing': !row.description, 'is-focus': row.name === highlighted }"
         >
           <td class="pw-api__name-cell">
-            <code>{{ row.name }}</code>
-            <span v-if="row.required" class="pw-api__required">必填</span>
+            <div class="pw-api__name-line">
+              <code>{{ row.name }}</code>
+              <span v-if="row.required" class="pw-api__required">必填</span>
+            </div>
+            <button
+              v-if="row.fields.length"
+              type="button"
+              class="pw-api__expand"
+              @click="toggleFields(row.key)"
+            >
+              {{ expanded[row.key] ? '▾' : '▸' }} {{ row.fields.length }} 个字段
+            </button>
           </td>
           <td>
             <button type="button" class="pw-api__type" :title="`复制 ${row.type}`" @click="copyType(row.type)">
@@ -190,6 +209,32 @@ const copyType = async (text: string): Promise<void> => {
             <span v-if="!row.demos.length" class="pw-api__no-demo">无</span>
           </td>
         </tr>
+        <tr v-if="row.fields.length && expanded[row.key]" :key="`${row.key}-fields`" class="pw-api__fields-row">
+          <td :colspan="tab === 'props' ? 5 : 4">
+            <table class="pw-api__fields">
+              <thead>
+                <tr>
+                  <th>字段</th>
+                  <th>类型</th>
+                  <th class="pw-api__fields-required">必填</th>
+                  <th>说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="field in row.fields" :key="field.name" :class="{ 'is-missing': !field.description }">
+                  <td><code>{{ field.name }}</code></td>
+                  <td><span class="pw-api__field-type">{{ field.type }}</span></td>
+                  <td class="pw-api__fields-required">{{ field.required ? '是' : '否' }}</td>
+                  <td>
+                    <template v-if="field.description">{{ field.description }}</template>
+                    <span v-else class="pw-api__missing">补 JSDoc 就会显示在这里</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </td>
+        </tr>
+        </template>
       </tbody>
     </table>
   </section>
@@ -310,6 +355,66 @@ const copyType = async (text: string): Promise<void> => {
   &__name-cell code {
     font-family: var(--rp-font-mono);
     font-size: 12px;
+  }
+
+  &__name-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &__expand {
+    margin-top: 4px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--rp-color-primary);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  &__fields-row > td {
+    padding: 0 10px 10px 26px;
+    background: color-mix(in srgb, var(--rp-color-surface) 60%, transparent);
+  }
+
+  &__fields {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11.5px;
+
+    th {
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--rp-color-border);
+      color: var(--rp-color-text-muted);
+      font-size: 10.5px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    td {
+      padding: 6px 8px;
+      border-bottom: 1px solid color-mix(in srgb, var(--rp-color-border) 45%, transparent);
+    }
+
+    code {
+      font-family: var(--rp-font-mono);
+      font-size: 11.5px;
+    }
+  }
+
+  &__field-type {
+    color: var(--rp-color-text-muted);
+    font-family: var(--rp-font-mono);
+    font-size: 11px;
+    word-break: break-word;
+  }
+
+  &__fields-required {
+    width: 56px;
+    color: var(--rp-color-text-muted);
+    text-align: center;
   }
 
   &__required {

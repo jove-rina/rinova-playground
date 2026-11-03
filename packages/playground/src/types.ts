@@ -53,12 +53,21 @@ export interface PageDescriptor {
 }
 
 /** 组件契约：由 vue-component-meta 从 TS 类型 + JSDoc 生成 */
+export interface ComponentApiField {
+  name: string
+  type: string
+  required: boolean
+  description: string
+}
+
 export interface ComponentApiProp {
   name: string
   type: string
   required: boolean
   default: string
   description: string
+  /** 对象 / 对象数组类型的字段（一层），如 columns: TableColumn[] */
+  fields?: ComponentApiField[]
 }
 
 export interface ComponentApiEvent {
@@ -66,6 +75,8 @@ export interface ComponentApiEvent {
   type: string
   signature: string
   description: string
+  /** 对象参数展开后的字段 */
+  fields?: ComponentApiField[]
 }
 
 export interface ComponentApiSlot {

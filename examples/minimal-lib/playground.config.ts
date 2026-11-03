@@ -5,6 +5,13 @@ export default defineConfig({
   scenes: 'src/scenes',
   port: 5273,
   components: ['src/lib/**/*.vue'],
-  groups: { button: 'Button', card: 'Card', input: 'Input', form: 'Form', internal: 'Internal' },
+  groups: {
+    button: 'Button',
+    card: 'Card',
+    input: 'Input',
+    table: 'Table',
+    form: 'Form',
+    internal: 'Internal',
+  },
   editor: { preset: 'cursor' },
 })

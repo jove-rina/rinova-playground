@@ -6,6 +6,15 @@
 >
 > **已知限制**：`vue-component-meta` 不解析 `defineEmits` 的 JSDoc（类型式与对象式都试过，`description` 恒为空）。补齐手段是 `<页>/meta.ts` 的 `apiNotes: { 'events:press': '说明' }`，已在本仓库三个示例里用上。
 
+## 对象类型的 API（P2.5，已实现）
+
+对象 / 对象数组类型的 prop（`columns: TableColumn[]`、`config?: TableConfig`）与事件的对象参数（`payload: SortPayload`）会被**展开成字段表**：字段名、类型、是否必填、说明（来自 interface 里的 JSDoc）。
+
+- 数据来自 `prop.getTypeObject()` 拿到的 TS 类型对象：先解 `| undefined` 的联合，再解数组取元素类型，最后 `checker.getPropertiesOfType()` 逐字段取类型与文档
+- 只展开**一层**（字段本身是对象时不再往里钻），避免 manifest 膨胀
+- UI：名称下方多一个「▸ N 个字段」，点开是嵌套表；对象参数走同一套渲染
+- 实测：`columns` 展开 4 个字段（`align` 的联合类型完整显示）、`config` 3 个、`sortChange` 的事件参数 2 个且带说明
+
 ## 0. 结论
 
 **不手写 API 文档，全部从 TypeScript 类型 + JSDoc 生成。**

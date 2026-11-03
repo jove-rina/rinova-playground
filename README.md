@@ -29,7 +29,7 @@ pnpm install
 pnpm dev        # 示例项目  → http://localhost:5273
 pnpm dev:docs   # 文档站     → http://localhost:5280
 pnpm build      # 构建示例（产物含 manifest.json / llms.txt / coverage.md）
-pnpm verify     # 25 项验收（三个示例全查：目录三层、页/场景一致、API 绑定、契约结构）
+pnpm verify     # 26 项验收（三个示例全查：目录三层、页/场景一致、API 绑定、契约结构、对象字段展开）
 pnpm verify:mcp # MCP server 冒烟（7 项）
 ```
 

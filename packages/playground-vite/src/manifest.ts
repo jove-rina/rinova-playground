@@ -34,12 +34,21 @@ const BUILTIN_PROPS = new Set([
   'as',
 ])
 
+export interface ManifestField {
+  name: string
+  type: string
+  required: boolean
+  description: string
+}
+
 export interface ManifestProp {
   name: string
   type: string
   required: boolean
   default: string
   description: string
+  /** 对象 / 对象数组类型的字段展开（一层），如 `columns: Column[]` → Column 的字段 */
+  fields?: ManifestField[]
 }
 
 export interface ManifestEvent {
@@ -49,6 +58,8 @@ export interface ManifestEvent {
   /** 完整签名，如 `(event: "focus", event: FocusEvent): void` */
   signature: string
   description: string
+  /** 某个对象参数展开后的字段（取第一个带属性的参数） */
+  fields?: ManifestField[]
 }
 
 export interface ManifestSlot {
@@ -139,6 +150,113 @@ const componentName = (rel: string): string => path.basename(rel, '.vue')
 /** 去掉 Vue 透传 props 与 onVue:* 钩子 */
 const isOwnProp = (name: string): boolean => !BUILTIN_PROPS.has(name) && !name.startsWith('onVue:')
 
+const FLAG_OBJECT = 524288 // ts.TypeFlags.Object
+const FLAG_UNION = 1048576 // ts.TypeFlags.Union
+
+/**
+ * 展开对象 / 对象数组类型的字段（一层）。
+ * vue-component-meta 的 schema 只是类型名字符串，这里借 getTypeObject() 拿 TS 类型对象自己走一遍。
+ */
+const DEBUG_FIELDS = Boolean(process.env.RINOVA_DEBUG_FIELDS)
+
+const readFields = (prop: unknown): ManifestField[] => {
+  try {
+    if (DEBUG_FIELDS) console.warn('[fields] enter', (prop as { name?: string }).name)
+    const getter = (prop as { getTypeObject?: () => unknown }).getTypeObject
+    if (typeof getter !== 'function') {
+      if (DEBUG_FIELDS) console.warn('[fields] no getTypeObject')
+      return []
+    }
+    const type = getter.call(prop) as Record<string, unknown> | undefined
+    if (!type) {
+      if (DEBUG_FIELDS) console.warn('[fields] no type')
+      return []
+    }
+    if (DEBUG_FIELDS) console.warn('[fields] type flags', Number(type.flags), 'keys', Object.keys(type).slice(0, 8).join(','))
+    const ts = type.checker as Record<string, (...args: never[]) => unknown> & {
+      typeToString: (value: unknown) => string
+    }
+    if (!ts || typeof ts.getPropertiesOfType !== 'function') {
+      if (DEBUG_FIELDS) console.warn('[fields] no checker', Object.keys(type))
+      return []
+    }
+
+    let target: Record<string, unknown> = type
+    if ((Number(type.flags) & FLAG_UNION) === FLAG_UNION) {
+      const parts = (type.types as Array<Record<string, unknown>> | undefined) ?? []
+      const objectPart = parts.find((part) => (Number(part.flags) & FLAG_OBJECT) === FLAG_OBJECT)
+      if (!objectPart) {
+        if (DEBUG_FIELDS) console.warn('[fields] union without object', parts.map((part) => Number(part.flags)).join(','))
+        return []
+      }
+      target = objectPart
+    }
+    // 数组：取元素类型
+    const args = target.typeArguments as unknown[] | undefined
+    if (args && args.length) target = args[0] as Record<string, unknown>
+    if ((Number(target.flags) & FLAG_OBJECT) !== FLAG_OBJECT) {
+      if (DEBUG_FIELDS) console.warn('[fields] target not object', Number(target.flags), ts.typeToString(target))
+      return []
+    }
+
+    const symbols = (ts.getPropertiesOfType as unknown as (value: unknown) => Array<Record<string, unknown>>)(target)
+    return symbols
+      .map((symbol) => {
+        const name = (symbol.getName as () => string)()
+        if (name.startsWith('__')) return null
+        const declarations = symbol.declarations as Array<unknown> | undefined
+        const location = (symbol.valueDeclaration ?? declarations?.[0]) as unknown
+        const symbolType = (
+          ts.getTypeOfSymbolAtLocation as unknown as (value: unknown, node: unknown) => unknown
+        )(symbol, location)
+        const text = ts.typeToString(symbolType)
+        const docs = (symbol.getDocumentationComment as unknown as (c: unknown) => unknown[])(ts)
+        const description = Array.isArray(docs)
+          ? docs.map((part) => (part as { text?: string }).text ?? '').join('').trim()
+          : ''
+        return {
+          name,
+          type: text,
+          // 可选性以类型里的 undefined 为准：vue-component-meta 包了一层 symbol，flags 不可靠
+          required: !/\|\s*undefined$/.test(text),
+          description,
+        }
+      })
+      .filter((item): item is ManifestField => item !== null)
+  } catch (error) {
+    if (DEBUG_FIELDS) console.warn('[fields] error', String(error))
+    return []
+  }
+}
+
+/** 事件：从参数元组里找第一个对象参数，展开它的字段 */
+const readEventFields = (event: unknown): ManifestField[] => {
+  try {
+    const getter = (event as { getTypeObject?: () => unknown }).getTypeObject
+    if (typeof getter !== 'function') return []
+    const tuple = getter.call(event) as Record<string, unknown> | undefined
+    if (!tuple) return []
+    const ts = tuple.checker as Record<string, (...args: never[]) => unknown> & {
+      typeToString: (value: unknown) => string
+      getPropertiesOfType: (value: unknown) => Array<Record<string, unknown>>
+    }
+    if (!ts || typeof ts.getPropertiesOfType !== 'function') return []
+    const args = (tuple.typeArguments as unknown[] | undefined) ?? []
+    for (const arg of args) {
+      const type = arg as Record<string, unknown>
+      if ((Number(type.flags) & FLAG_OBJECT) !== FLAG_OBJECT) continue
+      const fields = readFields({
+        getTypeObject: () => type,
+      })
+      if (fields.length) return fields
+    }
+    return []
+  } catch (error) {
+    if (DEBUG_FIELDS) console.warn('[fields] event error', String(error))
+    return []
+  }
+}
+
 const normalizeType = (value: unknown): string => {
   if (Array.isArray(value)) return value.map(String).join(' | ')
   return String(value ?? '')
@@ -191,20 +309,29 @@ export const buildManifest = (input: ManifestInput): Manifest => {
 
     const props: ManifestProp[] = meta.props
       .filter((prop) => isOwnProp(prop.name))
-      .map((prop) => ({
-        name: prop.name,
-        type: normalizeType(prop.type),
-        required: Boolean(prop.required),
-        default: String(prop.default ?? ''),
-        description: prop.description ?? '',
-      }))
+      .map((prop) => {
+        const type = normalizeType(prop.type)
+        const fields = readFields(prop)
+        return {
+          name: prop.name,
+          type,
+          required: Boolean(prop.required),
+          default: String(prop.default ?? ''),
+          description: prop.description ?? '',
+          ...(fields.length ? { fields } : {}),
+        }
+      })
 
-    const events: ManifestEvent[] = meta.events.map((event) => ({
-      name: event.name,
-      type: normalizeType(event.type),
-      signature: String(event.signature ?? ''),
-      description: event.description ?? '',
-    }))
+    const events: ManifestEvent[] = meta.events.map((event) => {
+      const fields = readEventFields(event)
+      return {
+        name: event.name,
+        type: normalizeType(event.type),
+        signature: String(event.signature ?? ''),
+        description: event.description ?? '',
+        ...(fields.length ? { fields } : {}),
+      }
+    })
 
     const slots: ManifestSlot[] = meta.slots.map((slot) => ({
       name: slot.name,

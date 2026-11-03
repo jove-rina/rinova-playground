@@ -396,6 +396,37 @@ if (fs.existsSync(manifestPath)) {
   record('API 契约（事件类型 / 插槽 / 暴露 / 缺说明清单）', true, '未生成 manifest，跳过')
 }
 
+/* 11.6 对象类型的 API 要能展开字段（props 的对象数组 + 事件的对象参数） */
+if (fs.existsSync(manifestPath)) {
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as {
+    components: Array<{
+      name: string
+      props: Array<{ name: string; fields?: Array<{ name: string; type: string; required: boolean; description: string }> }>
+      events: Array<{ name: string; fields?: Array<{ name: string; description: string }> }>
+    }>
+  }
+  const table = manifest.components.find((item) => item.name === 'MyTable')
+  const columnFields = table?.props.find((prop) => prop.name === 'columns')?.fields ?? []
+  const configFields = table?.props.find((prop) => prop.name === 'config')?.fields ?? []
+  const eventFields = table?.events.find((event) => event.name === 'sortChange')?.fields ?? []
+  const ok =
+    columnFields.length === 4 &&
+    columnFields.some((field) => field.name === 'align' && field.type.includes('"left"')) &&
+    columnFields.every((field) => Boolean(field.description)) &&
+    configFields.length === 3 &&
+    eventFields.length === 2 &&
+    eventFields.every((field) => Boolean(field.description))
+  record(
+    '对象类型 API 展开字段（props 对象数组 / 对象 / 事件参数）',
+    ok,
+    ok
+      ? `columns ${columnFields.length} 字段、config ${configFields.length} 字段、sortChange ${eventFields.length} 字段，说明齐全`
+      : `columns ${columnFields.length}、config ${configFields.length}、sortChange ${eventFields.length}`
+  )
+} else {
+  record('对象类型 API 展开字段（props 对象数组 / 对象 / 事件参数）', true, '未生成 manifest，跳过')
+}
+
 /* 12. 脚手架默认开契约清单：模板必须声明 components，否则新人拿不到 manifest */
 const templateConfigPath = path.join(root, 'packages/create-playground/template/playground.config.ts')
 const templateConfig = fs.existsSync(templateConfigPath)
