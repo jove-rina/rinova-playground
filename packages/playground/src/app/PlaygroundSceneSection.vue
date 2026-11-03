@@ -8,6 +8,8 @@ import PlaygroundSceneOutput from './PlaygroundSceneOutput.vue'
 import PwSceneBoundary from '../components/PwSceneBoundary.vue'
 import { copyPath, editorEnabled, openInEditor } from '../code/openInEditor'
 import { provideSceneContext } from '../payload/context'
+import { currentArgsSlots } from '../payload/args'
+import { currentOutputSlots } from '../payload/output'
 import type { Component } from 'vue'
 import type { SceneDescriptor } from '../types'
 
@@ -25,6 +27,13 @@ const sourceOpen = ref(false)
 
 const fileName = computed(() => props.scene.rel.split('/').pop() ?? props.scene.rel)
 const apiItems = computed(() => (props.scene.api ?? []).map((name) => ({ name })))
+
+/** 本场景是否声明了入参 / 出参；决定「参数 | 出参」并排还是单栏 */
+const ownsSlot = (sceneId: string): boolean => !sceneId || sceneId === props.scene.name
+const hasArgs = computed(() => currentArgsSlots.value.some((slot) => ownsSlot(slot.sceneId)))
+const hasOutput = computed(() => currentOutputSlots.value.some((slot) => ownsSlot(slot.sceneId)))
+const showArgsBlock = computed(() => props.showArgs !== false && hasArgs.value)
+const singleColumn = computed(() => !showArgsBlock.value || !hasOutput.value)
 
 let observer: IntersectionObserver | null = null
 
@@ -118,9 +127,10 @@ defineExpose({ mount })
       </PwSceneBoundary>
     </div>
 
-    <PlaygroundSceneArgs v-if="showArgs !== false" :scene-name="scene.name" />
-
-    <PlaygroundSceneOutput :scene-name="scene.name" :theme="theme ?? 'light'" />
+    <div v-if="showArgsBlock || hasOutput" class="pw-scene__io" :class="{ 'is-single': singleColumn }">
+      <PlaygroundSceneArgs v-if="showArgsBlock" :scene-name="scene.name" />
+      <PlaygroundSceneOutput v-if="hasOutput" :scene-name="scene.name" />
+    </div>
 
     <details class="pw-scene__source" @toggle="sourceOpen = ($event.target as HTMLDetailsElement).open">
       <summary>源码 · {{ fileName }}</summary>
@@ -218,6 +228,21 @@ defineExpose({ mount })
     );
     background-size: 200% 100%;
     animation: pw-skeleton 1.2s linear infinite;
+  }
+
+  &__io {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+
+    &.is-single {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    @media (max-width: 900px) {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 
   &__source {

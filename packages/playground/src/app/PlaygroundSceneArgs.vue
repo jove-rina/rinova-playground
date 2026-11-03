@@ -143,8 +143,8 @@ const resetSlot = (binding: SceneArgsBinding): void => {
 
 .pw-args__grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 24px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px 20px;
 
   @media (max-width: 720px) {
     grid-template-columns: minmax(0, 1fr);
