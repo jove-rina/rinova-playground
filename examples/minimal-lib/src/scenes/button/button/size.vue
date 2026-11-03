@@ -42,6 +42,7 @@ const current = ref<(typeof sizes)[number]>('md')
 .demo {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 20px;
   padding: 28px;
   border: 1px solid #e4e7ec;

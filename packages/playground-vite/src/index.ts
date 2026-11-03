@@ -565,6 +565,8 @@ ${pageCode}
 
       server.watcher.on('add', refresh)
       server.watcher.on('unlink', refresh)
+      // 改已有场景（尤其是 sceneMeta 的 title/section/api）也要重扫，否则虚拟模块还是旧的
+      server.watcher.on('change', (file) => refresh(file))
       server.watcher.on('change', async (file) => {
         if (!configFile || path.resolve(file) !== path.resolve(configFile)) return
         // 配置文件变了：重读配置 → 重扫场景 → 按新的 components 重挂监听 → 重算契约清单

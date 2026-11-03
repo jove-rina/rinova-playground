@@ -213,7 +213,7 @@ if (fs.existsSync(manifestPath)) {
   }
   const button = manifest.components.find((item) => item.name === 'MyButton')
   const hasProps = Boolean(button && button.props.some((prop) => prop.name === 'size'))
-  const flagsUncovered = Boolean(button?.uncoveredProps.includes('loading'))
+  const flagsUncovered = Boolean(button?.uncoveredProps.includes('pill'))
   record(
     '契约清单提取正确（含未覆盖标记）',
     hasProps && flagsUncovered,

@@ -37,7 +37,7 @@ pnpm verify:mcp # MCP server 冒烟（7 项）
 
 | 目录 | 作用 | 跑起来 |
 |---|---|---|
-| `examples/minimal-lib` | 最小接入，5 个场景 | `pnpm dev` → :5273 |
+| `examples/minimal-lib` | 测试床：4 个组件页 / 22 个场景，覆盖 props / events / exposes / slots 与一个组合表单 | `pnpm dev` → :5273 |
 | `examples/docs-site` | 文档站，用框架自己搭自己 | `pnpm dev:docs` → :5280 |
 | `examples/real-lib` | 真实组件库接入（shadcn-vue + Tailwind 4，11 个组件 / 19 props） | `pnpm --filter @rinova/example-real-lib dev` → :5281 |
 

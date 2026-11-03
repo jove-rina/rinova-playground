@@ -1,15 +1,27 @@
 <script setup lang="ts">
-defineProps<{
-  title: string
-  description?: string
-}>()
+withDefaults(
+  defineProps<{
+    title?: string
+    description?: string
+    /** 内边距档位 */
+    padding?: 'sm' | 'md' | 'lg'
+    /** 是否显示边框与阴影 */
+    bordered?: boolean
+  }>(),
+  { title: '', description: '', padding: 'md', bordered: true }
+)
 </script>
 
 <template>
-  <article class="my-card">
-    <header class="my-card__head">
-      <h3 class="my-card__title">{{ title }}</h3>
-      <p v-if="description" class="my-card__desc">{{ description }}</p>
+  <article
+    class="my-card"
+    :class="[`my-card--${padding}`, { 'my-card--plain': !bordered }]"
+  >
+    <header v-if="title || $slots.header" class="my-card__head">
+      <slot name="header">
+        <h3 class="my-card__title">{{ title }}</h3>
+        <p v-if="description" class="my-card__desc">{{ description }}</p>
+      </slot>
     </header>
     <div class="my-card__body">
       <slot />
@@ -29,6 +41,24 @@ defineProps<{
   background: #fff;
   box-shadow: 0 1px 2px rgb(16 24 40 / 6%);
   overflow: hidden;
+
+  &--plain {
+    border-color: transparent;
+    box-shadow: none;
+    background: #f8fafc;
+  }
+
+  &--sm .my-card__body {
+    padding: 10px 12px;
+  }
+
+  &--md .my-card__body {
+    padding: 12px 16px 16px;
+  }
+
+  &--lg .my-card__body {
+    padding: 20px 24px 24px;
+  }
 }
 
 .my-card__head {
@@ -49,7 +79,6 @@ defineProps<{
 }
 
 .my-card__body {
-  padding: 12px 16px 16px;
   font-size: 13px;
   color: #1c2024;
 }
