@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-import { Copy, SquareArrowOutUpRight } from '@lucide/vue'
 import CodeBlock from '../code/CodeBlock.vue'
 import PwApiBrief from '../components/PwApiBrief.vue'
 import PlaygroundSceneArgs from './PlaygroundSceneArgs.vue'
+import PlaygroundEditorMenu from './PlaygroundEditorMenu.vue'
 import PlaygroundSceneSource from './PlaygroundSceneSource.vue'
 import PlaygroundSceneOutput from './PlaygroundSceneOutput.vue'
 import PwSceneBoundary from '../components/PwSceneBoundary.vue'
-import { copyPath, editorEnabled, editorLabel, openInEditor } from '../code/openInEditor'
 import { provideSceneContext } from '../payload/context'
 import { currentArgsSlots } from '../payload/args'
 import { currentOutputSlots } from '../payload/output'
@@ -81,26 +80,7 @@ defineExpose({ mount })
         </a>
       </h2>
       <div class="pw-scene__actions">
-        <button
-          v-if="editorEnabled()"
-          type="button"
-          class="pw-scene__action"
-          title="在本地编辑器中打开这个场景文件"
-          @click="openInEditor(scene.rel)"
-        >
-          <SquareArrowOutUpRight :size="13" />
-          在 {{ editorLabel() }} 打开
-        </button>
-        <button
-          v-else
-          type="button"
-          class="pw-scene__action"
-          title="复制文件路径"
-          @click="copyPath(scene.rel)"
-        >
-          <Copy :size="13" />
-          复制路径
-        </button>
+        <PlaygroundEditorMenu :rel="scene.rel" />
       </div>
     </header>
 

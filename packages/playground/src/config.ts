@@ -47,6 +47,10 @@ export interface PlaygroundConfig {
     custom?: string
     /** 是否把项目根绝对路径写进产物，默认 true；对外发布时设为 false（按钮降级为复制路径） */
     exposeRoot?: boolean
+    /** 访问者能否在按钮里自己换编辑器，默认 true */
+    allowChoice?: boolean
+    /** 可选的编辑器列表，默认 ['vscode','cursor','webstorm'] */
+    options?: Array<'vscode' | 'cursor' | 'webstorm' | 'custom'>
   }
 }
 

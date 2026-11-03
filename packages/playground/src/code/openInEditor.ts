@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import config from 'virtual:playground/config'
 import { toast } from '../components/toast'
 import { copyText } from './clipboard'
@@ -6,7 +7,13 @@ interface EditorConfig {
   preset?: string
   custom?: string
   exposeRoot?: boolean
+  /** 是否允许访问者在按钮里自己切换编辑器，默认 true */
+  allowChoice?: boolean
+  /** 可选编辑器列表，默认全部内置的 */
+  options?: string[]
 }
+
+const STORAGE_KEY = 'rinova-playground:editor'
 
 const presets: Record<string, (file: string, line: number) => string> = {
   vscode: (file, line) => `vscode://file/${file}:${line}`,
@@ -21,18 +28,52 @@ const labels: Record<string, string> = {
   custom: '编辑器',
 }
 
-/** 按钮上显示的编辑器名，如「在 Cursor 打开」 */
-export const editorLabel = (): string => labels[editorConfig().preset ?? ''] ?? '编辑器'
+const DEFAULT_OPTIONS = ['vscode', 'cursor', 'webstorm']
 
 const editorConfig = (): EditorConfig => ((config as { editor?: EditorConfig }).editor ?? {})
+
+const readStored = (): string => {
+  try {
+    return localStorage.getItem(STORAGE_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+/** 访问者自己选的编辑器（localStorage），没有则用配置里的 preset */
+export const editorChoice = ref<string>(readStored() || editorConfig().preset || 'vscode')
+
+export const editorOptions = (): { value: string; label: string }[] => {
+  const editor = editorConfig()
+  const values = editor.options?.length ? editor.options : DEFAULT_OPTIONS
+  const list = values.filter((value) => value === 'custom' || Boolean(presets[value]))
+  // 配置里指定的 preset 无论如何都要在列表里
+  const preset = editor.preset
+  if (preset && !list.includes(preset)) list.unshift(preset)
+  return list.map((value) => ({ value, label: labels[value] ?? value }))
+}
+
+/** 访问者能否自己选：配置显式关闭，或只有一个可选编辑器时不显示菜单 */
+export const canChooseEditor = (): boolean =>
+  editorConfig().allowChoice !== false && editorOptions().length > 1
+
+export const setEditorChoice = (value: string): void => {
+  editorChoice.value = value
+  try {
+    localStorage.setItem(STORAGE_KEY, value)
+  } catch {
+    // 隐私模式下写不进去也没关系，本次会话仍生效
+  }
+}
+
+/** 按钮上显示的编辑器名，如「在 Cursor 打开」 */
+export const editorLabel = (): string => labels[editorChoice.value] ?? '编辑器'
 
 /** 项目根绝对路径；`editor.exposeRoot: false` 时插件不下发 */
 const projectRoot = (): string => String((config as { root?: string }).root ?? '')
 
-export const editorEnabled = (): boolean => {
-  const editor = editorConfig()
-  return Boolean(projectRoot()) && Boolean(editor.preset)
-}
+export const editorEnabled = (): boolean =>
+  Boolean(projectRoot()) && (Boolean(editorConfig().preset) || editorOptions().length > 0)
 
 /** 拼出「在 IDE 中打开」的 URL；拿不到绝对路径时返回空串 */
 export const editorUrl = (rel: string, line = 1): string => {
@@ -40,14 +81,15 @@ export const editorUrl = (rel: string, line = 1): string => {
   if (!root) return ''
   const abs = `${root.replace(/\/+$/, '')}/${rel.replace(/^\.?\//, '')}`
   const editor = editorConfig()
-  if (editor.preset === 'custom' && editor.custom) {
+
+  if (editorChoice.value === 'custom' && editor.custom) {
     return editor.custom.replace('{file}', abs).replace('{line}', String(line))
   }
-  const build = presets[editor.preset ?? 'vscode']
+  const build = presets[editorChoice.value]
   return build ? build(abs, line) : ''
 }
 
-/** 打开本地 IDE；失败时降级为复制绝对路径 */
+/** 打开本地 IDE；没有可用 URL 时降级为复制绝对路径 */
 export const openInEditor = (rel: string, line = 1): void => {
   const url = editorUrl(rel, line)
   if (!url) {
