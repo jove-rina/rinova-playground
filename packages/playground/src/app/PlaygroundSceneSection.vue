@@ -111,14 +111,14 @@ defineExpose({ mount })
     <p v-if="scene.description" class="pw-scene__desc">{{ scene.description }}</p>
     <PwApiBrief v-if="apiItems.length" :items="apiItems" />
 
-    <PlaygroundSceneArgs v-if="showArgs !== false" :scene-name="scene.name" />
-
     <div class="pw-scene__preview">
       <PwSceneBoundary :title="scene.title" :file="scene.rel">
         <component :is="component" v-if="component" />
         <div v-else class="pw-scene__skeleton" aria-hidden="true" />
       </PwSceneBoundary>
     </div>
+
+    <PlaygroundSceneArgs v-if="showArgs !== false" :scene-name="scene.name" />
 
     <PlaygroundSceneOutput :scene-name="scene.name" :theme="theme ?? 'light'" />
 
