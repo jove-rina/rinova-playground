@@ -3,8 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'v
 import config from 'virtual:playground/config'
 import { pages, scenes } from 'virtual:playground/scenes'
 import PwToastHost from '../components/PwToastHost.vue'
-import { currentArgs } from '../payload/args'
-import { currentOutput } from '../payload/output'
+import { currentArgsSlots } from '../payload/args'
+import { currentOutputSlots } from '../payload/output'
 import '../styles/theme.less'
 import PlaygroundPage from './PlaygroundPage.vue'
 import PlaygroundParamsPanel from './PlaygroundParamsPanel.vue'
@@ -59,10 +59,20 @@ const activeScene = computed(
 
 const showCode = ref(false)
 const showPayload = ref(false)
-const hasPayload = computed(() => currentArgs.value !== null || currentOutput.value !== null)
+/** 参数面板只认「主动选中的场景」：滚动不换，点索引/标题才换，避免看 A 改 B */
+const pinnedSceneName = ref('')
+const pinnedScene = computed(
+  () => activeScenes.value.find((scene) => scene.name === pinnedSceneName.value) ?? activeScene.value
+)
+/** 页头「参数」按钮是否可点：看当前滚到的场景有没有入参/出参 */
+const sceneHasPayload = (name: string): boolean =>
+  currentArgsSlots.value.some((slot) => slot.sceneId === name) ||
+  currentOutputSlots.value.some((slot) => slot.sceneId === name)
 
-watch(hasPayload, (value) => {
-  if (!value) showPayload.value = false
+const hasPayload = computed(() => sceneHasPayload(activeSceneName.value))
+
+watch(showPayload, (open) => {
+  if (open) pinnedSceneName.value = activeSceneName.value
 })
 
 const sidebarRef = ref<InstanceType<typeof PlaygroundSidebar> | null>(null)
@@ -134,11 +144,13 @@ watch(activePageId, (id) => {
   writeLocation()
   const list = scenesOfPage(id)
   activeSceneName.value = list[0]?.name ?? ''
+  pinnedSceneName.value = activeSceneName.value
   window.history.replaceState(null, '', `${basePath}${id}`)
 })
 
 const focusScene = (name: string): void => {
   activeSceneName.value = name
+  pinnedSceneName.value = name
   window.history.replaceState(null, '', `${basePath}${activePageId.value}#${name}`)
 }
 
@@ -220,8 +232,14 @@ onBeforeUnmount(() => {
         没有找到任何场景。目录约定：<code>src/scenes/&lt;分组&gt;/&lt;组件页&gt;/&lt;场景&gt;.vue</code>
       </div>
 
-      <div v-if="showPayload && hasPayload" class="pw-inspector">
-        <PlaygroundParamsPanel :theme="theme" :scene-name="activeSceneName" />
+      <div v-if="showPayload && pinnedScene" class="pw-inspector">
+        <PlaygroundParamsPanel
+          :theme="theme"
+          :scene-name="pinnedSceneName"
+          :scene-title="pinnedScene?.title"
+          @locate="pinnedScene && focusScene(pinnedScene.name)"
+          @close="showPayload = false"
+        />
       </div>
       </div>
 

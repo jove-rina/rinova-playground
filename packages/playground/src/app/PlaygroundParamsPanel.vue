@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { RotateCcw } from '@lucide/vue'
+import { Crosshair, RotateCcw, X } from '@lucide/vue'
 import PwButton from '../components/PwButton.vue'
 import PwInput from '../components/PwInput.vue'
 import PwSwitch from '../components/PwSwitch.vue'
@@ -12,7 +12,8 @@ import {
 } from '../payload/args'
 import { currentOutputSlots, type SceneOutputBinding } from '../payload/output'
 
-const props = defineProps<{ theme: 'light' | 'dark'; sceneName?: string }>()
+const props = defineProps<{ theme: 'light' | 'dark'; sceneName?: string; sceneTitle?: string }>()
+const emit = defineEmits<{ locate: []; close: [] }>()
 
 const tab = ref<'args' | 'output'>('args')
 const snapshots = ref<Array<{ label: string; text: string }>>([])
@@ -110,6 +111,14 @@ onBeforeUnmount(() => {
 
 <template>
   <aside class="pw-params">
+    <div v-if="sceneTitle" class="pw-params__scene">
+      <span class="pw-params__scene-label">当前场景</span>
+      <span class="pw-params__scene-title">{{ sceneTitle }}</span>
+      <button type="button" class="pw-params__locate" title="滚动到这个场景" @click="emit('locate')">
+        <Crosshair :size="12" />
+      </button>
+    </div>
+
     <header class="pw-params__head">
       <button
         type="button"
@@ -132,6 +141,9 @@ onBeforeUnmount(() => {
       <span class="pw-params__spacer" />
       <PwButton v-if="activeTab === 'args' && hasArgs" size="sm" variant="text" title="恢复默认值" @click="resetAll">
         <template #icon><RotateCcw :size="13" /></template>
+      </PwButton>
+      <PwButton size="sm" variant="text" title="关闭参数面板" @click="emit('close')">
+        <template #icon><X :size="13" /></template>
       </PwButton>
     </header>
 
@@ -194,7 +206,9 @@ onBeforeUnmount(() => {
           </header>
           <CodeBlock :code="item.text" lang="json" />
         </section>
-        <p v-if="!snapshots.length" class="pw-params__hint pw-params__hint--empty">（无数据）</p>
+        <p v-if="!snapshots.length" class="pw-params__hint pw-params__hint--empty">
+          这个场景没有声明 useSceneArgs / useSceneOutput
+        </p>
       </div>
     </div>
   </aside>
@@ -211,6 +225,45 @@ onBeforeUnmount(() => {
   min-height: 0;
   border-left: 1px solid var(--rp-color-border);
   background: var(--rp-color-bg);
+}
+
+.pw-params__scene {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 8px 12px 0;
+  font-size: 11.5px;
+}
+
+.pw-params__scene-label {
+  color: var(--rp-color-text-muted);
+}
+
+.pw-params__scene-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pw-params__locate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--rp-color-border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--rp-color-text-muted);
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--rp-color-primary);
+    color: var(--rp-color-primary);
+  }
 }
 
 .pw-params__head {
