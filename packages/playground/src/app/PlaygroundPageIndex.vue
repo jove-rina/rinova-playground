@@ -47,22 +47,45 @@ const groups = computed(() =>
 
 <style scoped lang="less">
 .pw-index {
-  position: sticky;
-  top: 0;
-  flex: 0 0 200px;
-  width: 200px;
-  max-height: calc(100vh - 80px);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   overflow: auto;
-  padding: 4px 0 24px;
+  padding: 18px 14px 24px 18px;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  /* 闲置时透明，指针进到面板才显形 */
+  &::-webkit-scrollbar-thumb {
+    border-radius: 3px;
+    background: transparent;
+  }
+
+  &:hover::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--rp-color-text-muted) 26%, transparent);
+  }
+
+  &:hover::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--rp-color-text-muted) 45%, transparent);
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
 
   &__inner {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 18px;
+    padding-right: 2px;
   }
 
   &__label {
-    margin-bottom: 4px;
+    margin: 0 0 6px;
+    /* 和链接文字同一条 9px 内缩 */
+    padding-left: 9px;
     color: var(--rp-color-text-muted);
     font-size: 10.5px;
     font-weight: 600;
@@ -72,24 +95,32 @@ const groups = computed(() =>
 
   &__link {
     display: block;
-    padding: 3px 8px;
-    margin-left: -8px;
+    padding: 5px 9px;
     border-radius: 6px;
     color: var(--rp-color-text-muted);
-    font-size: 12px;
+    font-size: 12.5px;
     line-height: 1.5;
     text-decoration: none;
     transition: color 0.15s ease, background 0.15s ease;
 
+    & + & {
+      margin-top: 1px;
+    }
+
     &:hover {
-      background: var(--rp-color-surface);
+      background: color-mix(in srgb, var(--rp-color-text-muted) 10%, transparent);
       color: var(--rp-color-text);
     }
 
+    &:focus-visible {
+      outline: 2px solid color-mix(in srgb, var(--rp-color-primary) 45%, transparent);
+      outline-offset: -2px;
+    }
+
     &.is-active {
-      background: color-mix(in srgb, var(--rp-color-primary) 11%, transparent);
+      background: color-mix(in srgb, var(--rp-color-primary) 12%, transparent);
       color: var(--rp-color-primary);
-      font-weight: 600;
+      font-weight: 500;
     }
   }
 }

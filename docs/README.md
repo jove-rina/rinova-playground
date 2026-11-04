@@ -13,10 +13,11 @@
 | [04-依赖与组件基线](04-依赖与组件基线.md) | 依赖白名单、自研原语、主题变量、编辑器与高亮规格 | 实现者 |
 | [05-路线图](05-路线图.md) | M0–M5 里程碑与每阶段验收 | 所有人 |
 | [06-风险与开放问题](06-风险与开放问题.md) | 风险、开放问题、已定决策记录 | 所有人 |
+| [logs/](logs/) | 每天的工作汇总（`YYYY-MM-DD.md`，写法见 [logs/README](logs/README.md)） | 所有人 |
 
 ## 一句话
 
-**rinova-playground 是面向 Vue3 的「文件即场景」组件演示框架：你只放 `.vue` 文件，它负责侧栏、源码面板、入参/出参面板、契约清单和 AI 可读的能力描述。**
+**rinova-playground 是面向 Vue3 的「文件即场景」组件演示框架：你只放 `.vue` 文件，它负责侧栏、场景内源码、输入/输出面板、契约清单和 AI 可读的能力描述。**
 
 ## 已定决策（不可在实现中临时改）
 
@@ -26,8 +27,8 @@
 | D2 | 不使用 Element Plus，playground 自研基础通用组件 | 04 |
 | D3 | 代码高亮统一使用 shiki | 04 |
 | D4 | 图标统一使用 `@lucide/vue` | 04 |
-| D5 | 完整代码展示使用代码编辑器：`monaco-editor@0.57` + `@shikijs/monaco` | 04 |
-| D6 | Monaco 只保留 `editor` + `ts` 两个 worker，懒加载，并提供 `codeViewer` 开关 | 04 |
+| D5 | ~~完整代码展示使用 Monaco~~ **v0.3 撤销**：源码只在场景内用 shiki 展示，Monaco 代码与依赖已删除（dist 1.1MB） | 04 |
+| D6 | ~~Monaco worker / `codeViewer` 开关~~ **v0.3 随 D5 撤销**；v0.4 若做编辑 / diff 再按需重新引入 | 04 |
 | D7 | v0.1 全部代码在本仓库重新实现，不迁移旧项目代码 | 05 |
 | D8 | 运行时与插件使用 `@rinova` scope：`@rinova/playground` / `@rinova/playground-vite` / `@rinova/playground-mcp`；脚手架为 `create-rinova-playground`（npm 的 `create-*` 约定，不带 scope），创建命令 `pnpm create rinova-playground` | 本页 |
 | D9 | 样式统一用 Less（`<style lang="less">` + `styles/mixins.less` 共享变量与 mixin），不写裸 CSS | 04 |

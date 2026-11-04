@@ -16,7 +16,7 @@ import Prose from '../../../components/Prose.vue'
       <li>在客户端配置里加一个 stdio server</li>
     </ol>
 
-    <pre><code>{
+    <pre data-lang="json"><code>{
   "mcpServers": {
     "rinova-playground": {
       "command": "npx",

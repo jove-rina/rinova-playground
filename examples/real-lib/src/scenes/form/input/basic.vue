@@ -5,7 +5,7 @@ export const sceneMeta = defineSceneMeta({
   title: '输入框 · 双向绑定',
   order: 1,
   tags: ['modelValue', 'vueuse'],
-  description: 'Input 用 useVModel 被动绑定，输入内容实时出现在出参面板。',
+  description: 'Input 用 useVModel 被动绑定，输入内容实时出现在输出面板。',
 })
 </script>
 

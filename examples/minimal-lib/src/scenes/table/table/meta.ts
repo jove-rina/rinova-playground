@@ -9,6 +9,6 @@ export const pageMeta = definePageMeta({
     'exposed:visibleCount': '返回当前可见行数（受 config.pageSize 影响）',
   },
   title: 'Table',
-  description: '对象数组 props（columns / rows）与对象 props（config）：API 表里能展开看字段。',
+  description: '对象数组 props（columns / rows）与对象 props（config）：契约里的类型定义汇总在 Types 页签。',
   order: 5,
 })

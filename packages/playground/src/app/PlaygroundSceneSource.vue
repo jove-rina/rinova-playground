@@ -1,6 +1,18 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { Check, ChevronRight, Copy, FileCode2, SquareArrowOutUpRight } from '@lucide/vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import {
+  CaseSensitive,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Copy,
+  FileCode2,
+  Search,
+  SquareArrowOutUpRight,
+  WholeWord,
+  X,
+} from '@lucide/vue'
 import CodeBlock from '../code/CodeBlock.vue'
 import { copyPath, editorEnabled, editorLabel, openInEditor } from '../code/openInEditor'
 import { copyText } from '../code/clipboard'
@@ -9,6 +21,7 @@ import type { SceneDescriptor } from '../types'
 
 const props = defineProps<{ scene: SceneDescriptor }>()
 
+const rootEl = ref<HTMLElement | null>(null)
 const open = ref(false)
 const activeIndex = ref(0)
 const cache = new Map<string, string>()
@@ -19,8 +32,113 @@ const copied = ref(false)
 const sources = computed(() => props.scene.sources)
 const active = computed(() => sources.value[activeIndex.value] ?? sources.value[0])
 const fileName = computed(() => active.value?.rel.split('/').pop() ?? '')
-const lang = computed(() => (fileName.value.endsWith('.ts') ? 'ts' : 'vue'))
+const lang = computed(() => {
+  if (fileName.value.endsWith('.md')) return 'markdown'
+  if (fileName.value.endsWith('.ts')) return 'ts'
+  if (fileName.value.endsWith('.json')) return 'json'
+  if (fileName.value.endsWith('.css')) return 'css'
+  if (fileName.value.endsWith('.less')) return 'less'
+  return 'vue'
+})
 const code = computed(() => (active.value ? (codes.value[active.value.rel] ?? '') : ''))
+
+/* ---------------- 源码搜索 ---------------- */
+
+const codeRef = ref<{ scrollToHit: (index: number) => void } | null>(null)
+const findOpen = ref(false)
+const findInput = ref<HTMLInputElement | null>(null)
+const query = ref('')
+/** 防抖后的关键字：真正传给 CodeBlock 的那个 */
+const applied = ref('')
+const caseSensitive = ref(false)
+const wholeWord = ref(false)
+const total = ref(0)
+const hitIndex = ref(-1)
+let debounce = 0
+
+const countText = computed(() => {
+  if (!applied.value) return ''
+  if (!total.value) return '无结果'
+  return `${hitIndex.value + 1}/${total.value}`
+})
+
+const openFind = async (): Promise<void> => {
+  if (!open.value) return
+  findOpen.value = true
+  await nextTick()
+  findInput.value?.focus()
+  findInput.value?.select()
+}
+
+const closeFind = (): void => {
+  findOpen.value = false
+  query.value = ''
+  applied.value = ''
+  total.value = 0
+  hitIndex.value = -1
+}
+
+const toggleFind = (): void => {
+  if (findOpen.value) closeFind()
+  else void openFind()
+}
+
+watch(query, () => {
+  window.clearTimeout(debounce)
+  if (!query.value) {
+    applied.value = ''
+    total.value = 0
+    hitIndex.value = -1
+    return
+  }
+  debounce = window.setTimeout(() => {
+    applied.value = query.value
+  }, 120)
+})
+
+/** CodeBlock 报回匹配数：新结果从第一个开始，并滚到那里 */
+const onCount = (value: number): void => {
+  total.value = value
+  hitIndex.value = value > 0 ? 0 : -1
+  if (value > 0) void nextTick(() => codeRef.value?.scrollToHit(0))
+}
+
+const step = (delta: number): void => {
+  if (!total.value) return
+  hitIndex.value = (hitIndex.value + delta + total.value) % total.value
+  void nextTick(() => codeRef.value?.scrollToHit(hitIndex.value))
+}
+
+const onFindKeydown = (event: KeyboardEvent): void => {
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    step(event.shiftKey ? -1 : 1)
+    return
+  }
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeFind()
+  }
+}
+
+/** 卡片内有焦点时 ⌘/Ctrl+F 拦下来做源码搜索，不弹浏览器查找 */
+const onWindowKeydown = (event: KeyboardEvent): void => {
+  const meta = event.metaKey || event.ctrlKey
+  if (!meta || event.key.toLowerCase() !== 'f') return
+  if (!open.value || !rootEl.value) return
+  const focused = document.activeElement
+  if (!focused || !rootEl.value.contains(focused)) return
+  event.preventDefault()
+  void openFind()
+}
+
+onMounted(() => window.addEventListener('keydown', onWindowKeydown))
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onWindowKeydown)
+  window.clearTimeout(debounce)
+})
+
+/* ---------------- 源码读取 ---------------- */
 
 /** 首次展开或切 Tab 时才读源码 */
 const load = async (rel: string): Promise<void> => {
@@ -41,11 +159,13 @@ const load = async (rel: string): Promise<void> => {
 
 const toggle = async (): Promise<void> => {
   open.value = !open.value
+  if (!open.value) closeFind()
   if (open.value && active.value) await load(active.value.rel)
 }
 
 const selectTab = async (index: number): Promise<void> => {
   activeIndex.value = index
+  hitIndex.value = -1
   if (open.value && active.value) await load(active.value.rel)
 }
 
@@ -63,7 +183,7 @@ const copy = async (): Promise<void> => {
 </script>
 
 <template>
-  <section class="pw-source" :class="{ 'is-open': open }">
+  <section ref="rootEl" class="pw-source" :class="{ 'is-open': open }">
     <header class="pw-source__head">
       <button type="button" class="pw-source__toggle" @click="toggle">
         <ChevronRight :size="14" class="pw-source__chevron" />
@@ -73,6 +193,16 @@ const copy = async (): Promise<void> => {
       </button>
 
       <div class="pw-source__actions">
+        <button
+          v-if="open"
+          type="button"
+          class="pw-source__action"
+          :class="{ 'is-on': findOpen }"
+          title="在源码中搜索（⌘F）"
+          @click="toggleFind"
+        >
+          <Search :size="14" />
+        </button>
         <button type="button" class="pw-source__action" :title="copied ? '已复制' : '复制源码'" @click="copy">
           <Check v-if="copied" :size="14" />
           <Copy v-else :size="14" />
@@ -93,6 +223,56 @@ const copy = async (): Promise<void> => {
     </header>
 
     <div v-if="open" class="pw-source__body">
+      <div v-if="findOpen" class="pw-source__find">
+        <Search :size="13" class="pw-source__find-icon" />
+        <input
+          ref="findInput"
+          v-model="query"
+          type="text"
+          class="pw-source__find-input"
+          placeholder="在当前文件中搜索"
+          aria-label="在源码中搜索"
+          spellcheck="false"
+          @keydown="onFindKeydown"
+        />
+        <span class="pw-source__find-count" aria-live="polite">{{ countText }}</span>
+        <button
+          type="button"
+          class="pw-source__find-btn"
+          :disabled="!total"
+          title="上一个匹配（Shift+Enter）"
+          @click="step(-1)"
+        >
+          <ChevronUp :size="14" />
+        </button>
+        <button type="button" class="pw-source__find-btn" :disabled="!total" title="下一个匹配（Enter）" @click="step(1)">
+          <ChevronDown :size="14" />
+        </button>
+        <button
+          type="button"
+          class="pw-source__find-btn"
+          :class="{ 'is-on': caseSensitive }"
+          :aria-pressed="caseSensitive"
+          title="区分大小写"
+          @click="caseSensitive = !caseSensitive"
+        >
+          <CaseSensitive :size="14" />
+        </button>
+        <button
+          type="button"
+          class="pw-source__find-btn"
+          :class="{ 'is-on': wholeWord }"
+          :aria-pressed="wholeWord"
+          title="全词匹配"
+          @click="wholeWord = !wholeWord"
+        >
+          <WholeWord :size="14" />
+        </button>
+        <button type="button" class="pw-source__find-btn" title="关闭搜索（Esc）" @click="closeFind">
+          <X :size="14" />
+        </button>
+      </div>
+
       <div v-if="sources.length > 1" class="pw-source__tabs">
         <button
           v-for="(source, index) in sources"
@@ -108,7 +288,17 @@ const copy = async (): Promise<void> => {
 
       <div class="pw-source__code">
         <p v-if="loading" class="pw-source__hint">读取中…</p>
-        <CodeBlock v-else-if="code" :code="code" :lang="lang" />
+        <CodeBlock
+          v-else-if="code"
+          ref="codeRef"
+          :code="code"
+          :lang="lang"
+          :query="applied"
+          :case-sensitive="caseSensitive"
+          :whole-word="wholeWord"
+          :active="hitIndex"
+          @count="onCount"
+        />
       </div>
     </div>
   </section>
@@ -192,7 +382,8 @@ const copy = async (): Promise<void> => {
     color: var(--rp-color-text-muted);
     cursor: pointer;
 
-    &:hover {
+    &:hover,
+    &.is-on {
       background: color-mix(in srgb, var(--rp-color-text-muted) 12%, transparent);
       color: var(--rp-color-primary);
     }
@@ -200,6 +391,73 @@ const copy = async (): Promise<void> => {
 
   &__body {
     border-top: 1px solid var(--rp-color-border);
+  }
+
+  &__find {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    border-bottom: 1px solid color-mix(in srgb, var(--rp-color-border) 60%, transparent);
+    background: color-mix(in srgb, var(--rp-color-surface) 60%, transparent);
+  }
+
+  &__find-icon {
+    flex: 0 0 auto;
+    color: var(--rp-color-text-muted);
+  }
+
+  &__find-input {
+    flex: 1;
+    min-width: 0;
+    padding: 2px 4px;
+    border: 0;
+    background: transparent;
+    color: var(--rp-color-text);
+    font-family: var(--rp-font-mono);
+    font-size: 12px;
+    outline: none;
+
+    &::placeholder {
+      color: var(--rp-color-text-muted);
+    }
+  }
+
+  &__find-count {
+    flex: 0 0 auto;
+    min-width: 44px;
+    color: var(--rp-color-text-muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  &__find-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--rp-color-text-muted);
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--rp-color-text-muted) 12%, transparent);
+      color: var(--rp-color-text);
+    }
+
+    &.is-on {
+      color: var(--rp-color-primary);
+    }
+
+    &:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
   }
 
   &__tabs {

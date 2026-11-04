@@ -6,7 +6,7 @@ export const sceneMeta = defineSceneMeta({
   order: 2,
   section: 'events',
   api: ['update:modelValue', 'focus', 'blur', 'enter'],
-  description: '四个 emit：输入、聚焦、失焦、回车；右侧出参实时看次数。',
+  description: '四个 emit：输入、聚焦、失焦、回车；右侧输出实时看次数。',
 })
 </script>
 <script setup lang="ts">

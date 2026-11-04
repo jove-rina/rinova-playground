@@ -1,6 +1,6 @@
 # rinova-playground
 
-面向 Vue3 的「文件即场景」组件演示框架。你只放 `.vue` 文件，它负责侧栏、源码面板、入参/出参面板、契约清单和 AI 可读的能力描述。
+面向 Vue3 的「文件即场景」组件演示框架。你只放 `.vue` 文件，它负责侧栏、源码面板、输入/输出面板、契约清单和 AI 可读的能力描述。
 
 ```bash
 pnpm create rinova-playground my-lib

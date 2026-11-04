@@ -32,6 +32,41 @@
   color-scheme: dark;
 }
 
+/**
+ * 演示画布（scene 预览区）自带一套 token，与外壳主题解耦。
+ * 默认浅色：很多组件库只做了浅色，放在暗色外壳里会变成「黑底黑字」。
+ * 由 config.theme.stage 决定取值（'auto' 时跟随外壳），挂到 [data-pw-stage] 上。
+ */
+[data-pw-stage='light'] {
+  --rp-color-bg: #ffffff;
+  --rp-color-surface: #f6f7f9;
+  --rp-color-border: #e4e7ec;
+  --rp-color-text: #1c2024;
+  --rp-color-text-muted: #667085;
+  --rp-color-primary: #2f6feb;
+  --rp-color-primary-contrast: #ffffff;
+  --rp-color-success: #1a7f37;
+  --rp-color-warning: #b7791f;
+  --rp-color-danger: #d1242f;
+
+  color-scheme: light;
+}
+
+[data-pw-stage='dark'] {
+  --rp-color-bg: #16181d;
+  --rp-color-surface: #1c1f26;
+  --rp-color-border: #2b3038;
+  --rp-color-text: #e6e8ec;
+  --rp-color-text-muted: #98a2b3;
+  --rp-color-primary: #5b8def;
+  --rp-color-primary-contrast: #0b1220;
+  --rp-color-success: #3fb950;
+  --rp-color-warning: #d29922;
+  --rp-color-danger: #f85149;
+
+  color-scheme: dark;
+}
+
 html,
 body {
   margin: 0;
@@ -53,4 +88,11 @@ body {
 .pw-app *::before,
 .pw-app *::after {
   box-sizing: border-box;
+}
+
+/* 浅色/深色切换用 View Transitions 的圆形揭开：默认的交叉淡入会和剪辑动画打架，关掉 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
 }

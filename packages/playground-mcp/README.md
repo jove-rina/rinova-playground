@@ -46,7 +46,7 @@ export default defineConfig({
 
 ## 工具
 
-| 工具 | 入参 | 返回 |
+| 工具 | 输入 | 返回 |
 |---|---|---|
 | `capability_search` | `query`、`limit?` | 命中的组件 + prop 名 + 场景数 |
 | `capability_get` | `component` | props/events/slots/exposed 全量契约，每个 prop 带 `文件:行号`，附相关场景与未覆盖 props |

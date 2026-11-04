@@ -83,6 +83,10 @@ const VARS = [
 const missing = VARS.filter((name) => !themeCss.includes(`${name}:`))
 record('12 个主题变量齐全', missing.length === 0, missing.join(', '))
 
+/* 3.1 演示画布自带 token：组件不一定支持暗色，画布必须能独立于外壳 */
+const stageTokens = ["[data-pw-stage='light']", "[data-pw-stage='dark']"].filter((sel) => !themeCss.includes(sel))
+record('演示画布自带 light/dark token', stageTokens.length === 0, stageTokens.length ? stageTokens.join(', ') : "theme.less 里有 [data-pw-stage='light'] / 'dark' 两套")
+
 /* 4. 内核无项目内绝对别名引用（@/...） */
 const srcFiles = walk(path.join(pkgDir, 'src'), (file) => /\.(ts|vue)$/.test(file))
 const aliasHits = srcFiles.filter((file) => /from ['"]@\//.test(fs.readFileSync(file, 'utf8')))
@@ -105,7 +109,7 @@ const scanDiskScenes = (dir: string, prefix = '', out: string[] = []): string[] 
     const relPath = prefix ? `${prefix}/${entry.name}` : entry.name
     const abs = path.join(dir, entry.name)
     if (entry.isDirectory()) scanDiskScenes(abs, relPath, out)
-    else if (entry.name.endsWith('.vue')) out.push(relPath.replace(/\.vue$/, ''))
+    else if (entry.name.endsWith('.vue') || entry.name.endsWith('.md')) out.push(relPath.replace(/\.(vue|md)$/, ''))
   }
   return out
 }
@@ -123,7 +127,12 @@ const listVue = (dir: string): string[] =>
   fs.existsSync(dir)
     ? fs
         .readdirSync(dir, { withFileTypes: true })
-        .filter((entry) => entry.isFile() && entry.name.endsWith('.vue') && !entry.name.startsWith('.'))
+        .filter(
+          (entry) =>
+            entry.isFile() &&
+            (entry.name.endsWith('.vue') || entry.name.endsWith('.md')) &&
+            !entry.name.startsWith('.')
+        )
         .map((entry) => entry.name)
     : []
 
@@ -137,7 +146,7 @@ for (const example of EXAMPLES) {
     }
   }
 }
-record('示例目录三层（分组下不放 .vue）', misplaced.length === 0, misplaced.join(', '))
+record('示例目录结构（分组下不放场景文件，页/子页放 .vue 或 .md）', misplaced.length === 0, misplaced.join(', '))
 
 /* 5.2 静态：pageMeta.component 必须能在 manifest 里找到，否则 API 表会静默消失 */
 const bindingMisses: string[] = []
@@ -152,20 +161,27 @@ for (const example of EXAMPLES) {
   const names = new Set(manifest.components.map((item) => item.name))
   const scenesRoot = path.join(example.dir, 'src/scenes')
   let bound = 0
+  /** 页目录（含子组件页）逐个核对 meta.component */
+  const checkPageBinding = (dir: string, label: string): void => {
+    const metaFile = path.join(dir, 'meta.ts')
+    if (!fs.existsSync(metaFile)) return
+    const declared = fs.readFileSync(metaFile, 'utf8').match(/component:\s*'([^']+)'/)
+    // 与插件一致：没写 component 时按「页目录名 → 页标题」同名匹配
+    const name = path.basename(dir)
+    const candidates = [declared?.[1], name, name.replace(/[-_]/g, '')].filter(Boolean) as string[]
+    const byLower = new Map(manifest.components.map((item) => [item.name.toLowerCase(), item.name]))
+    const hit = candidates.map((candidate) => byLower.get(candidate.toLowerCase())).find(Boolean)
+    if (declared && !hit) {
+      bindingMisses.push(`${example.label}: ${label} → ${declared[1]}`)
+      return
+    }
+    if (hit) bound += 1
+  }
   for (const group of listDirs(scenesRoot)) {
     for (const page of listDirs(path.join(scenesRoot, group))) {
-      const metaFile = path.join(scenesRoot, group, page, 'meta.ts')
-      if (!fs.existsSync(metaFile)) continue
-      const declared = fs.readFileSync(metaFile, 'utf8').match(/component:\s*'([^']+)'/)
-      // 与插件一致：没写 component 时按「页目录名 → 页标题」同名匹配
-      const candidates = [declared?.[1], page, page.replace(/[-_]/g, '')].filter(Boolean) as string[]
-      const byLower = new Map(manifest.components.map((item) => [item.name.toLowerCase(), item.name]))
-      const hit = candidates.map((candidate) => byLower.get(candidate.toLowerCase())).find(Boolean)
-      if (declared && !hit) {
-        bindingMisses.push(`${example.label}: ${group}/${page} → ${declared[1]}`)
-        continue
-      }
-      if (hit) bound += 1
+      const pageAbs = path.join(scenesRoot, group, page)
+      checkPageBinding(pageAbs, `${group}/${page}`)
+      for (const sub of listDirs(pageAbs)) checkPageBinding(path.join(pageAbs, sub), `${group}/${page}/${sub}`)
     }
   }
   bindingCounts.push(`${example.label} ${bound} 个页绑定`)
@@ -178,8 +194,24 @@ record(
 
 /* 5.3 运行时：每个示例的页 / 场景与磁盘一致（dev server 未启动则跳过） */
 for (const example of EXAMPLES) {
-  const diskScenes = scanDiskScenes(path.join(example.dir, 'src/scenes')).sort()
-  const diskPages = [...new Set(diskScenes.map((id) => id.split('/').slice(0, 2).join('/')))].sort()
+  const scenesRoot = path.join(example.dir, 'src/scenes')
+  const diskScenes = scanDiskScenes(scenesRoot).sort()
+  // 页 = 「分组/页」与「分组/页/子页」两层目录里含 .vue（或含下级 .vue）的目录
+  const diskPages = (() => {
+    const out: string[] = []
+    for (const group of listDirs(scenesRoot)) {
+      for (const page of listDirs(path.join(scenesRoot, group))) {
+        const pageAbs = path.join(scenesRoot, group, page)
+        const pageId = `${group}/${page}`
+        const subs = listDirs(pageAbs)
+        if (listVue(pageAbs).length || subs.some((sub) => listVue(path.join(pageAbs, sub)).length)) out.push(pageId)
+        for (const sub of subs) {
+          if (listVue(path.join(pageAbs, sub)).length) out.push(`${pageId}/${sub}`)
+        }
+      }
+    }
+    return out.sort()
+  })()
   const url = `http://localhost:${example.port}/@id/__x00__virtual:playground/scenes`
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(2000) })
@@ -199,6 +231,90 @@ for (const example of EXAMPLES) {
         : `磁盘页 ${diskPages.join(',')} / 运行时页 ${runtimePages.join(',')}｜磁盘场景 ${diskScenes.join(',')} / 运行时场景 ${runtimeScenes.join(',')}`
     )
 
+    // 页顺序：先按 config.groups 声明序（groupOrder），再按组内 pageMeta.order，最后按 id
+    const parsedPages = pagePart
+      .split('\n  {\n')
+      .slice(1)
+      .map((chunk) => ({
+        id: chunk.match(/id: "([^"]+)"/)?.[1] ?? '',
+        groupDir: chunk.match(/groupDir: "([^"]+)"/)?.[1] ?? '',
+        groupOrder: Number(chunk.match(/groupOrder: (\d+)/)?.[1] ?? NaN),
+        parentId: chunk.match(/parentId: "([^"]+)"/)?.[1] ?? '',
+        order: Number(chunk.match(/order: (\d+)/)?.[1] ?? NaN),
+      }))
+      .filter((page) => page.id)
+
+    // 1) 分组按声明序；2) 同一父级下的兄弟按 (order, id)；3) 父页一定排在子页之前
+    const groupsOk = parsedPages.every((page, index) => {
+      if (index === 0) return true
+      return (parsedPages[index - 1] as (typeof parsedPages)[number]).groupOrder <= page.groupOrder
+    })
+    const siblingsOk = parsedPages.every((page, index) => {
+      if (index === 0) return true
+      const prev = parsedPages[index - 1] as (typeof parsedPages)[number]
+      if (prev.groupOrder !== page.groupOrder || prev.parentId !== page.parentId) return true
+      if (prev.order !== page.order) return prev.order < page.order
+      return prev.id.localeCompare(page.id) <= 0
+    })
+    const parentsOk = parsedPages.every((page, index) => {
+      if (!page.parentId) return true
+      const parentIndex = parsedPages.findIndex((item) => item.id === page.parentId)
+      return parentIndex >= 0 && parentIndex < index
+    })
+    const orderedOk = groupsOk && siblingsOk && parentsOk
+    const groupSequence = [...new Set(parsedPages.map((page) => page.groupDir))]
+    const multiPageGroup = parsedPages.filter((page) => page.groupDir === 'card' && !page.parentId).length
+    const childPages = parsedPages.filter((page) => page.parentId).length
+    const multiOk = example.label !== 'minimal-lib' || (multiPageGroup >= 2 && childPages >= 1)
+    // 内容页（没绑组件）不能挂源码卡片；Markdown 场景默认也不展示源码
+    const pageBlocks = pagePart
+      .split('\n  {\n')
+      .slice(1)
+      .map((chunk) => ({
+        id: chunk.match(/id: "([^"]+)"/)?.[1] ?? '',
+        component: chunk.match(/component: "([^"]+)"/)?.[1] ?? null,
+        showSource: /showSource: true/.test(chunk) ? true : /showSource: false/.test(chunk) ? false : null,
+      }))
+      .filter((page) => page.id)
+    const contentLeaks = pageBlocks.filter((page) => !page.component && page.showSource !== false)
+    record(
+      `[${example.label}] 内容页不展示源码`,
+      contentLeaks.length === 0,
+      contentLeaks.length
+        ? contentLeaks.map((page) => `${page.id}(showSource=${page.showSource})`).join(', ')
+        : `${pageBlocks.filter((page) => !page.component).length} 个内容页均为 false`
+    )
+
+    const sceneBlocks = scenePart
+      .split('\n  {\n')
+      .slice(1)
+      .map((chunk) => ({
+        id: chunk.match(/id: "([^"]+)"/)?.[1] ?? '',
+        lang: chunk.match(/lang: "([^"]+)"/)?.[1] ?? 'vue',
+        showSource: /showSource: true/.test(chunk) ? true : /showSource: false/.test(chunk) ? false : null,
+      }))
+      .filter((scene) => scene.id)
+    const mdLeaks = sceneBlocks.filter((scene) => scene.lang === 'md' && scene.showSource !== false)
+    record(
+      `[${example.label}] Markdown 场景默认不展示源码`,
+      mdLeaks.length === 0,
+      mdLeaks.length
+        ? mdLeaks.map((scene) => scene.id).join(', ')
+        : `${sceneBlocks.filter((scene) => scene.lang === 'md').length} 个 .md 场景`
+    )
+
+    record(
+      `[${example.label}] 页顺序（分组声明序 → 页 order，父页在子页前）`,
+      parsedPages.length > 0 && orderedOk && multiOk,
+      orderedOk && multiOk
+        ? `分组顺序 ${groupSequence.join(' → ')}${
+            example.label === 'minimal-lib'
+              ? `；card 组 ${multiPageGroup} 个一级页、${childPages} 个子组件页`
+              : ''
+          }`
+        : `顺序异常（分组 ${groupsOk} / 兄弟 ${siblingsOk} / 父页在前 ${parentsOk}）或缺少多页/子页用例`
+    )
+
     // sceneMeta 的字段是否真的进了虚拟模块：只看 sceneMeta 声明块里出现过的字段
     const metaBlocks = walk(path.join(example.dir, 'src/scenes'), (file) => file.endsWith('.vue'))
       .map((file) => fs.readFileSync(file, 'utf8').split('</script>')[0] ?? '')
@@ -212,6 +328,9 @@ for (const example of EXAMPLES) {
     record(`[${example.label}] sceneMeta 字段已注入`, expects.every(Boolean), expects.every(Boolean) ? 'title/order/section/api/hidden 与源码一致' : '虚拟模块缺少源码里声明过的字段')
   } catch {
     record(`[${example.label}] 页 / 场景与磁盘一致`, true, 'dev server 未运行，跳过')
+    record(`[${example.label}] 内容页不展示源码`, true, 'dev server 未运行，跳过')
+    record(`[${example.label}] Markdown 场景默认不展示源码`, true, 'dev server 未运行，跳过')
+    record(`[${example.label}] 页顺序（分组声明序 → 页 order，父页在子页前）`, true, 'dev server 未运行，跳过')
     record(`[${example.label}] sceneMeta 字段已注入`, true, 'dev server 未运行，跳过')
   }
 
@@ -417,14 +536,41 @@ if (fs.existsSync(manifestPath)) {
     eventFields.length === 2 &&
     eventFields.every((field) => Boolean(field.description))
   record(
-    '对象类型 API 展开字段（props 对象数组 / 对象 / 事件参数）',
+    '对象类型 API 字段提取（manifest，供 MCP 输出）',
     ok,
     ok
       ? `columns ${columnFields.length} 字段、config ${configFields.length} 字段、sortChange ${eventFields.length} 字段，说明齐全`
       : `columns ${columnFields.length}、config ${configFields.length}、sortChange ${eventFields.length}`
   )
 } else {
-  record('对象类型 API 展开字段（props 对象数组 / 对象 / 事件参数）', true, '未生成 manifest，跳过')
+  record('对象类型 API 字段提取（manifest，供 MCP 输出）', true, '未生成 manifest，跳过')
+}
+
+/* 11.7 契约里的具名类型要汇总成「类型」页签的数据（声明原文 + 来源文件） */
+if (fs.existsSync(manifestPath)) {
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as {
+    components: Array<{
+      name: string
+      types?: Array<{ name: string; kind: string; file: string; code: string }>
+    }>
+  }
+  const table = manifest.components.find((item) => item.name === 'MyTable')
+  const types = table?.types ?? []
+  const named = ['TableColumn', 'TableConfig', 'SortPayload'].every((name) =>
+    types.some((item) => item.name === name)
+  )
+  const withDocs = types.every((item) => item.code.includes('/**') && item.code.includes(item.name))
+  const fromSource = types.every((item) => item.file === 'src/lib/MyTable.vue' && item.kind === 'interface')
+  const ok = types.length === 3 && named && withDocs && fromSource
+  record(
+    '类型定义汇总（声明原文 / JSDoc / 来源文件）',
+    ok,
+    ok
+      ? `MyTable ${types.length} 个类型：${types.map((item) => item.name).join('、')}，原文含 JSDoc`
+      : `MyTable types=${types.length}，命名 ${named}，含注释 ${withDocs}，来源 ${fromSource}`
+  )
+} else {
+  record('类型定义汇总（声明原文 / JSDoc / 来源文件）', true, '未生成 manifest，跳过')
 }
 
 /* 12. 脚手架默认开契约清单：模板必须声明 components，否则新人拿不到 manifest */
@@ -436,6 +582,219 @@ record(
   '脚手架模板默认开契约清单',
   /components:\s*\[/.test(templateConfig) && templateConfig.includes('src/components'),
   templateConfig ? '模板 playground.config.ts 声明了 components' : '模板配置文件缺失',
+)
+
+/* 13. 文档能力：Markdown 解析器 + 公共排版组件 + 内容页不开源码 */
+const { parseFrontmatter, splitBlocks } = (await import(
+  '../packages/playground/src/components/prose/parse.ts'
+)) as typeof import('../packages/playground/src/components/prose/parse.ts')
+
+const frontmatter = parseFrontmatter(`---
+title: 键盘操作
+order: 2
+tags: [快捷键, 菜单]
+showSource: false
+---
+
+正文`)
+const frontmatterOk =
+  frontmatter.title === '键盘操作' &&
+  frontmatter.order === '2' &&
+  Array.isArray(frontmatter.tags) &&
+  (frontmatter.tags as string[]).join(',') === '快捷键,菜单' &&
+  frontmatter.showSource === 'false'
+record('Markdown frontmatter 解析', frontmatterOk, JSON.stringify(frontmatter))
+
+const blocks = splitBlocks(`前一段
+
+::: tip 小标题
+提示正文
+:::
+
+中间
+
+::: steps
+1. 一
+2. 二
+:::
+
+::: unknown-thing
+不认识也要保留
+:::`)
+const blocksOk =
+  blocks.length === 5 &&
+  blocks[0]?.kind === 'md' &&
+  blocks[1]?.kind === 'callout' &&
+  blocks[1]?.tone === 'tip' &&
+  blocks[1]?.title === '小标题' &&
+  blocks[2]?.kind === 'md' &&
+  blocks[3]?.kind === 'steps' &&
+  blocks.some((block) => block.kind === 'md' && block.text.includes('不认识也要保留'))
+record(
+  'Markdown 容器切分（tip / steps / 未知容器不吞内容）',
+  blocksOk,
+  `${blocks.length} 块：${blocks.map((block) => block.kind).join(' → ')}`
+)
+
+const unclosed = splitBlocks(`::: warn
+没有收口`)
+const unclosedOk = unclosed.length === 1 && unclosed[0]?.kind === 'md' && unclosed[0]?.text.includes('没有收口')
+record('Markdown 未闭合容器回退为正文', unclosedOk, unclosed.map((block) => block.kind).join(','))
+
+const coreIndex = fs.readFileSync(path.join(pkgDir, 'src/index.ts'), 'utf8')
+const proseExports = ['PwProse', 'PwCallout', 'PwSteps', 'PwStep', 'PwMarkdown', 'defineMarkdownScene'].filter(
+  (name) => !coreIndex.includes(name)
+)
+const proseDir = path.join(pkgDir, 'src/components/prose')
+const enhanceFile = path.join(proseDir, 'enhance.ts')
+const enhanceSrc = fs.existsSync(enhanceFile) ? fs.readFileSync(enhanceFile, 'utf8') : ''
+const proseSrc = fs.readFileSync(path.join(proseDir, 'PwProse.vue'), 'utf8')
+const markdownSrc = fs.readFileSync(path.join(proseDir, 'PwMarkdown.vue'), 'utf8')
+const enhanceOk =
+  enhanceSrc.includes('enhanceCodeBlocks') &&
+  enhanceSrc.includes('data-pw-copy') &&
+  enhanceSrc.includes('navigator.clipboard') &&
+  enhanceSrc.includes('codeToHtml') &&
+  proseSrc.includes('enhanceCodeBlocks') &&
+  markdownSrc.includes('enhanceCodeBlocks') &&
+  markdownSrc.includes('handleCopyClick')
+record(
+  '代码块增强：高亮 + 语言角标 + 复制（Markdown 与手写内容页同一条路径）',
+  enhanceOk,
+  enhanceOk ? 'enhance.ts / PwProse / PwMarkdown 都接上了' : '缺少 enhance.ts 或组件没接'
+)
+
+const proseStylePath = path.join(proseDir, 'prose.less')
+const proseStyleText = fs.existsSync(proseStylePath) ? fs.readFileSync(proseStylePath, 'utf8') : ''
+const copyStyles = ['\\.pw-prose__lang', '\\.pw-prose__copy', 'padding-top: 27px'].filter(
+  (pattern) => !new RegExp(pattern).test(proseStyleText)
+)
+const themeRules = ['var(--shiki-light)', 'var(--shiki-dark)', 'var(--shiki-dark-bg)'].filter(
+  (token) => !proseStyleText.includes(token)
+)
+record('shiki 双主题在 prose 里落地（否则代码块只有颜色变量、没有颜色）', themeRules.length === 0, themeRules.join(', '))
+
+record('代码块工具栏样式（角标 / 复制按钮 / 不压第一行）', copyStyles.length === 0, copyStyles.join(', '))
+
+record('公共排版组件已导出（PwProse / PwCallout / PwSteps / PwMarkdown）', proseExports.length === 0, proseExports.join(', '))
+
+const proseSheet = path.join(pkgDir, 'src/components/prose/prose.less')
+const proseCss = fs.existsSync(proseSheet) ? fs.readFileSync(proseSheet, 'utf8') : ''
+record(
+  '排版样式只取主题变量（.pw-prose）',
+  proseCss.includes('.pw-prose') && !/#[0-9a-fA-F]{3,8}\b|rgba?\(/.test(proseCss),
+  fs.existsSync(proseSheet) ? `${proseCss.split('\n').length} 行` : '缺少 prose.less'
+)
+
+const mdScenes = walk(path.join(exampleDir, 'src/scenes'), (file) => file.endsWith('.md'))
+record(
+  'Markdown 场景可用（.md 直接当场景）',
+  mdScenes.length >= 4,
+  `${mdScenes.length} 个：${mdScenes.map((file) => path.basename(file)).join(', ')}`
+)
+
+/* 12.4 代码配色：常量与实际 import 的主题必须一致（改一处漏另一处会静默退化成无高亮） */
+const highlighterFile = path.join(pkgDir, 'src/code/highlighter.ts')
+const highlighterSrc = fs.readFileSync(highlighterFile, 'utf8')
+const lightTheme = highlighterSrc.match(/PW_THEME_LIGHT = '([^']+)'/)?.[1] ?? ''
+const darkTheme = highlighterSrc.match(/PW_THEME_DARK = '([^']+)'/)?.[1] ?? ''
+const themeImports = [...highlighterSrc.matchAll(/import\('@shikijs\/themes\/([^']+)'\)/g)].map((match) => match[1])
+const themeOk =
+  Boolean(lightTheme) &&
+  Boolean(darkTheme) &&
+  themeImports.includes(lightTheme) &&
+  themeImports.includes(darkTheme)
+record(
+  '代码配色主题：常量与 shiki 主题 import 一致',
+  themeOk,
+  themeOk ? `浅色 ${lightTheme} / 深色 ${darkTheme}` : `常量 ${lightTheme}/${darkTheme}，import ${themeImports.join(',')}`
+)
+
+/* 12.5 术语统一：入参 / 出参 → 输入 / 输出 */
+const legacyTerms: string[] = []
+const termTargets = [
+  ...walk(path.join(pkgDir, 'src'), (item) => /\.(ts|vue|md|less)$/.test(item)),
+  ...walk(path.join(root, 'docs'), (item) => item.endsWith('.md')),
+  path.join(pkgDir, 'README.md'),
+]
+for (const file of termTargets) {
+  if (!fs.existsSync(file)) continue
+  const text = fs.readFileSync(file, 'utf8')
+  if (text.includes('入参') || text.includes('出参')) legacyTerms.push(rel(file))
+}
+record('术语统一（入参 / 出参 → 输入 / 输出）', legacyTerms.length === 0, legacyTerms.join(', '))
+
+/* 12.6 预览宽度：预设 / 自定义 / 设备外壳 */
+const { VIEWPORT_PRESETS, CUSTOM_WIDTH, clampWidth, resolveViewport, shellOf } = (await import(
+  '../packages/playground/src/app/viewport.ts'
+)) as typeof import('../packages/playground/src/app/viewport.ts')
+
+const presetIds = VIEWPORT_PRESETS.map((item) => item.id).join(',')
+const presetOk =
+  presetIds === 'auto,mobile,tablet,desktop' &&
+  VIEWPORT_PRESETS.map((item) => item.px).join(',') === '0,390,820,1280'
+record('预览宽度预设（自适应 / 手机 390 / 平板 820 / 桌面 1280）', presetOk, presetIds)
+
+const shellOk =
+  shellOf(390) === 'phone' &&
+  shellOf(820) === 'tablet' &&
+  shellOf(1280) === 'desktop' &&
+  resolveViewport({ id: 'custom', px: 700 }).shell === 'tablet' &&
+  resolveViewport({ id: 'auto', px: 0 }).shell === 'none'
+record('设备外壳按宽度选择（手机 / 平板 / 桌面窗口）', shellOk, `390→${shellOf(390)} 820→${shellOf(820)} 1280→${shellOf(1280)}`)
+
+const clampOk = clampWidth(100) === CUSTOM_WIDTH.min && clampWidth(5000) === CUSTOM_WIDTH.max && clampWidth(375.4) === 375
+record('自定义宽度夹在 320–1920px', clampOk, `${clampWidth(100)} / ${clampWidth(5000)} / ${clampWidth(375.4)}`)
+
+const pageSrc = fs.readFileSync(path.join(pkgDir, 'src/app/PlaygroundPage.vue'), 'utf8')
+const shellMarkup = ['pw-device-wrap--', 'pw-device__bar', 'pw-device__sensor', 'container-name: pw-preview'].filter(
+  (token) => !pageSrc.includes(token)
+)
+record('预览外壳与容器查询已接线', shellMarkup.length === 0, shellMarkup.join(', '))
+
+// 索引必须在外壳之外：pw-page__work 里 device-wrap 与 pw-index 是兄弟
+const workAt = pageSrc.indexOf('class="pw-page__work"')
+const indexPath = pageSrc.indexOf('<PlaygroundPageIndex')
+const captionAt = pageSrc.indexOf('pw-device__caption')
+const indexOutsideShell = workAt >= 0 && indexPath > workAt && indexPath > captionAt
+const indexToggle =
+  pageSrc.includes("rinova-playground:index-open") &&
+  pageSrc.includes('收起索引') &&
+  pageSrc.includes('展开索引') &&
+  pageSrc.includes('pw-index-slot')
+const appSrc = fs.readFileSync(path.join(root, 'packages/playground/src/app/App.vue'), 'utf8')
+const themeMotion =
+  appSrc.includes('startViewTransition') &&
+  appSrc.includes("pseudoElement: '::view-transition-new(root)'") &&
+  appSrc.includes('await nextTick()') &&
+  appSrc.includes('prefers-reduced-motion')
+record('浅色/深色切换有圆开动效（含降级）', themeMotion, themeMotion ? 'View Transitions + reduced-motion 降级' : '缺少切换动效')
+const narrowIndex = pageSrc.includes('@media (max-width: 1080px)') && pageSrc.includes('.pw-head-btn--index')
+record('窄窗口隐藏索引与开关', narrowIndex, narrowIndex ? '≤1080px 让位' : '缺少窄窗让位规则')
+
+record('索引可展开/收起且状态持久化', indexToggle, indexToggle ? '右上角按钮 + localStorage' : '缺少索引开关')
+
+record(
+  '场景索引在外壳之外（不随预览宽度缩放）',
+  indexOutsideShell,
+  indexOutsideShell ? 'pw-page__work 内：device-wrap + pw-index 并列' : '索引仍在滚动 / 外壳内'
+)
+
+/* 13.1 源码搜索的匹配器：大小写 / 全词 / 多次命中（DOM 侧靠它切 <mark>） */
+const { findMatches } = await import('../packages/playground/src/code/find.ts')
+const text = 'const columns = 1 // Columns\nconst columnWidth = 2'
+const searchCases = [
+  { label: '默认忽略大小写', got: findMatches(text, 'Columns').length, want: 2 },
+  { label: '区分大小写', got: findMatches(text, 'Columns', { caseSensitive: true }).length, want: 1 },
+  { label: '全词 + 区分大小写只命中独立词', got: findMatches(text, 'Columns', { wholeWord: true, caseSensitive: true }).length, want: 1 },
+  { label: '子串命中两处', got: findMatches(text, 'column').length, want: 3 },
+  { label: '空串不命中', got: findMatches(text, '').length, want: 0 },
+]
+const searchBad = searchCases.filter((item) => item.got !== item.want)
+record(
+  '源码搜索匹配器（大小写 / 全词 / 多次命中）',
+  searchBad.length === 0,
+  searchBad.length ? searchBad.map((item) => `${item.label}: ${item.got}≠${item.want}`).join('; ') : '5 条用例通过'
 )
 
 /* 13. 契约清单 glob：`**\/` 必须能匹配任意层目录（真实项目组件常在 Xxx/src/components/ 三层） */

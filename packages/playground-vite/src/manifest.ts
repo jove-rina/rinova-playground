@@ -75,6 +75,16 @@ export interface ManifestExposed {
   description: string
 }
 
+/** 组件契约里引用到的具名类型定义（源文件原文，含 JSDoc） */
+export interface ManifestType {
+  name: string
+  kind: 'interface' | 'type'
+  /** 声明所在文件，相对项目根 */
+  file: string
+  /** 声明原文，直接交给代码块高亮 */
+  code: string
+}
+
 export interface ManifestComponent {
   name: string
   rel: string
@@ -82,6 +92,8 @@ export interface ManifestComponent {
   events: ManifestEvent[]
   slots: ManifestSlot[]
   exposed: ManifestExposed[]
+  /** props / events / slots / exposed 类型里引用到的具名 interface / type（一层） */
+  types?: ManifestType[]
   scenes: string[]
   uncoveredProps: string[]
   /** 没写 JSDoc 的 API，格式 `props:disabled` / `events:press` */
@@ -89,6 +101,7 @@ export interface ManifestComponent {
 }
 
 export interface ManifestScene {
+  lang?: 'vue' | 'md'
   id: string
   title: string
   group: string
@@ -108,7 +121,14 @@ export interface ManifestInput {
   patterns: string[]
   /** tsconfig 路径（相对项目根） */
   tsconfig: string
-  scenes: Array<{ id: string; title: string; group: string; rel: string; sources: { rel: string }[] }>
+  scenes: Array<{
+    id: string
+    title: string
+    group: string
+    rel: string
+    lang?: 'vue' | 'md'
+    sources: { rel: string }[]
+  }>
 }
 
 const toPosix = (value: string): string => value.split(path.sep).join('/')
@@ -262,6 +282,87 @@ const normalizeType = (value: unknown): string => {
   return String(value ?? '')
 }
 
+const FLAG_SYMBOL_INTERFACE = 64 // ts.SymbolFlags.Interface
+const FLAG_SYMBOL_TYPEALIAS = 524288 // ts.SymbolFlags.TypeAlias
+/** 容器类型：取元素类型继续回溯 */
+const WRAPPER_TYPE_NAMES = new Set(['Array', 'ReadonlyArray', 'Set', 'ReadonlySet', 'Map', 'ReadonlyMap', 'Promise'])
+
+/** 第三方包与 TS lib 里的类型不收录（Array / Record / HTMLElement 之类，读了也只是噪音） */
+const isExternalDeclaration = (file: string): boolean =>
+  /[/\\]node_modules[/\\]/.test(file) || /[/\\]lib\.[a-z0-9.]+\.d\.ts$/.test(file)
+
+/** 取 schema 项上的 TS 类型对象，拿不到就返回 undefined */
+const typeObjectOf = (value: unknown): unknown => {
+  try {
+    const getter = (value as { getTypeObject?: () => unknown }).getTypeObject
+    return typeof getter === 'function' ? getter.call(value) : undefined
+  } catch (error) {
+    if (DEBUG_FIELDS) console.warn('[types] getTypeObject error', String(error))
+    return undefined
+  }
+}
+
+/**
+ * 从类型对象回溯到具名 interface / type，切出声明原文（含 JSDoc）。
+ *
+ * 类型字符串（`TableColumn[]`）拿不到结构，只能顺着类型对象往下走：联合去掉 undefined、
+ * 容器取元素类型，直到命中本项目的 interface / type 符号。只回溯一层，避免递归整个类型图。
+ */
+const readTypeDeclaration = (type: unknown, root: string): ManifestType | null => {
+  try {
+    let current = type as Record<string, unknown> | undefined
+    for (let depth = 0; depth < 5 && current; depth += 1) {
+      const flags = Number(current.flags)
+      if ((flags & FLAG_UNION) === FLAG_UNION) {
+        const parts = (current.types as Array<Record<string, unknown>> | undefined) ?? []
+        current = parts.find((part) => (Number(part.flags) & FLAG_OBJECT) === FLAG_OBJECT)
+        continue
+      }
+      if ((flags & FLAG_OBJECT) !== FLAG_OBJECT) return null
+
+      const getSymbol = current.getSymbol as (() => Record<string, unknown> | undefined) | undefined
+      const symbol =
+        (typeof getSymbol === 'function' ? getSymbol.call(current) : undefined) ??
+        (current.symbol as Record<string, unknown> | undefined)
+      if (!symbol) return null
+
+      const name = (symbol.getName as () => string)()
+      const args = current.typeArguments as unknown[] | undefined
+      if (WRAPPER_TYPE_NAMES.has(name) && args?.length) {
+        current = args[0] as Record<string, unknown>
+        continue
+      }
+
+      const symbolFlags = Number(symbol.flags)
+      const isInterface = (symbolFlags & FLAG_SYMBOL_INTERFACE) === FLAG_SYMBOL_INTERFACE
+      if (!isInterface && (symbolFlags & FLAG_SYMBOL_TYPEALIAS) !== FLAG_SYMBOL_TYPEALIAS) return null
+
+      const declarations = symbol.declarations as Array<Record<string, unknown>> | undefined
+      const node = declarations?.[0]
+      if (!node) return null
+      const sourceFile = (node.getSourceFile as () => { fileName: string; text: string })()
+      if (isExternalDeclaration(sourceFile.fileName)) return null
+
+      // getFullStart 在声明前留出 JSDoc 的整体注释，trim 后正好从 /** 开始
+      const start = Number((node.getFullStart as () => number)())
+      const end = Number((node.getEnd as () => number)())
+      const code = sourceFile.text.slice(start, end).trim()
+      if (!code) return null
+
+      return {
+        name,
+        kind: isInterface ? 'interface' : 'type',
+        file: toPosix(path.relative(root, sourceFile.fileName)),
+        code,
+      }
+    }
+    return null
+  } catch (error) {
+    if (DEBUG_FIELDS) console.warn('[types] read error', String(error))
+    return null
+  }
+}
+
 export const buildManifest = (input: ManifestInput): Manifest => {
   const { createChecker } = require('vue-component-meta') as typeof import('vue-component-meta')
 
@@ -307,11 +408,19 @@ export const buildManifest = (input: ManifestInput): Manifest => {
   const components: ManifestComponent[] = findComponentFiles(input.root, input.patterns).map((rel) => {
     const meta = readMeta(rel)
 
+    /** 本组件契约引用到的具名类型，按名字去重 */
+    const typeRefs = new Map<string, ManifestType>()
+    const collectType = (type: unknown): void => {
+      const item = readTypeDeclaration(type, input.root)
+      if (item && !typeRefs.has(item.name)) typeRefs.set(item.name, item)
+    }
+
     const props: ManifestProp[] = meta.props
       .filter((prop) => isOwnProp(prop.name))
       .map((prop) => {
         const type = normalizeType(prop.type)
         const fields = readFields(prop)
+        collectType(typeObjectOf(prop))
         return {
           name: prop.name,
           type,
@@ -324,6 +433,8 @@ export const buildManifest = (input: ManifestInput): Manifest => {
 
     const events: ManifestEvent[] = meta.events.map((event) => {
       const fields = readEventFields(event)
+      const tuple = typeObjectOf(event) as Record<string, unknown> | undefined
+      for (const arg of (tuple?.typeArguments as unknown[] | undefined) ?? []) collectType(arg)
       return {
         name: event.name,
         type: normalizeType(event.type),
@@ -333,21 +444,30 @@ export const buildManifest = (input: ManifestInput): Manifest => {
       }
     })
 
-    const slots: ManifestSlot[] = meta.slots.map((slot) => ({
-      name: slot.name,
-      type: normalizeType(slot.type),
-      description: slot.description ?? '',
-    }))
+    const slots: ManifestSlot[] = meta.slots.map((slot) => {
+      collectType(typeObjectOf(slot))
+      return {
+        name: slot.name,
+        type: normalizeType(slot.type),
+        description: slot.description ?? '',
+      }
+    })
 
-    const exposed: ManifestExposed[] = meta.exposed.map((item) => ({
-      name: item.name,
-      type: normalizeType(item.type),
-      description: item.description ?? '',
-    }))
+    const exposed: ManifestExposed[] = meta.exposed.map((item) => {
+      collectType(typeObjectOf(item))
+      return {
+        name: item.name,
+        type: normalizeType(item.type),
+        description: item.description ?? '',
+      }
+    })
+
+    // 只有 .vue 场景算「用到了这个组件」：Markdown 文档里提到 prop 名字不算演示
+    const demos = input.scenes.filter((scene) => (scene.lang ?? 'vue') === 'vue')
 
     // 关联场景：场景源码里出现过该组件的文件名（import 路径或组件标签）
     const base = componentName(rel)
-    const related = input.scenes.filter((scene) => {
+    const related = demos.filter((scene) => {
       const text = sceneTexts.get(scene.id) ?? ''
       return scene.sources.some((source) => source.rel === rel) || text.includes(base)
     })
@@ -374,6 +494,7 @@ export const buildManifest = (input: ManifestInput): Manifest => {
       events,
       slots,
       exposed,
+      ...(typeRefs.size ? { types: [...typeRefs.values()] } : {}),
       scenes: related.map((scene) => scene.id),
       uncoveredProps,
       undocumented,
@@ -387,6 +508,7 @@ export const buildManifest = (input: ManifestInput): Manifest => {
       id: scene.id,
       title: scene.title,
       group: scene.group,
+      lang: scene.lang ?? 'vue',
       rel: scene.rel,
       sources: scene.sources.map((source) => source.rel),
     })),
@@ -414,6 +536,9 @@ export const renderLlmsTxt = (manifest: Manifest): string => {
     }
     if (component.exposed.length) {
       lines.push(`- exposed: ${component.exposed.map((item) => `${item.name}${item.type ? `: ${item.type}` : ''}`).join(', ')}`)
+    }
+    if (component.types?.length) {
+      lines.push(`- 类型定义: ${component.types.map((item) => `${item.name} (${item.file})`).join(', ')}`)
     }
     if (component.scenes.length) lines.push(`- 相关场景: ${component.scenes.join(', ')}`)
     if (component.uncoveredProps.length)

@@ -7,7 +7,7 @@ import { currentArgsSlots, type SceneArgs, type SceneArgsBinding } from '../payl
 
 const props = defineProps<{ sceneName: string }>()
 
-/** 只显示本场景声明的入参槽位 */
+/** 只显示本场景声明的输入槽位 */
 const slots = computed(() =>
   currentArgsSlots.value.filter((slot) => !slot.sceneId || slot.sceneId === props.sceneName)
 )
@@ -52,6 +52,19 @@ const resetSlot = (binding: SceneArgsBinding): void => {
 
 <template>
   <div v-if="slots.length" class="pw-args">
+    <header class="pw-args__head">
+      <span class="pw-args__title">输入</span>
+      <button
+        v-if="!multiSlot && slots[0]"
+        type="button"
+        class="pw-args__reset"
+        title="恢复默认值"
+        @click="resetSlot(slots[0])"
+      >
+        <RotateCcw :size="12" />
+      </button>
+    </header>
+
     <section v-for="binding in slots" :key="`${binding.sceneId}:${binding.key}`" class="pw-args__slot">
       <header v-if="multiSlot" class="pw-args__slot-head">
         <span class="pw-args__slot-name">{{ binding.label || binding.key }}</span>
@@ -107,6 +120,22 @@ const resetSlot = (binding: SceneArgsBinding): void => {
   border: 1px dashed var(--rp-color-border);
   border-radius: var(--rp-radius);
   background: var(--rp-color-surface);
+}
+
+.pw-args__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pw-args__title {
+  color: var(--rp-color-text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.pw-args__reset {
+  margin-left: auto;
 }
 
 .pw-args__slot + .pw-args__slot {

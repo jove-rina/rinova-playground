@@ -5,7 +5,7 @@ export const sceneMeta = defineSceneMeta({
   title: '基础用法',
   order: 1,
   section: 'overview',
-  description: '三个字段 + 校验 + 提交；右侧出参能同时看到值、错误和提交结果。',
+  description: '三个字段 + 校验 + 提交；右侧输出能同时看到值、错误和提交结果。',
 })
 </script>
 

@@ -1,5 +1,5 @@
 /**
- * 场景元信息。可选：不写也能用，只在需要覆盖标题 / 排序 / 入参出参面板时写。
+ * 场景元信息。可选：不写也能用，只在需要覆盖标题 / 排序 / 输入输出面板时写。
  */
 export interface SceneMeta {
   /** 覆盖由文件名推导出的标题 */
@@ -10,7 +10,7 @@ export interface SceneMeta {
   tags?: string[]
   /** 场景说明，显示在预览区上方 */
   description?: string
-  /** 入参 / 出参快照 */
+  /** 输入 / 输出快照 */
   payload?: {
     input?: () => Record<string, unknown>
     output?: () => Record<string, unknown>
@@ -26,6 +26,8 @@ export interface SceneMeta {
   section?: 'overview' | 'props' | 'events' | 'exposes' | 'slots'
   /** 本场景覆盖的公开 API 名（如 ['disabled']），显示在场景标题下方 */
   api?: string[]
+  /** 这一个场景是否展示源码；覆盖 page 与全局配置 */
+  showSource?: boolean
 }
 
 /** 组件页级元信息：写在 `<页>/meta.ts`，导出 `pageMeta` */
@@ -43,6 +45,13 @@ export interface PageMeta {
    * 用来补 JSDoc 覆盖不到的地方（目前事件说明无法从 defineEmits 提取）。
    */
   apiNotes?: Record<string, string>
+  /**
+   * 这一页是否展示场景源码。
+   * 介绍 / 指南类内容页建议 `false`；不写则跟随 `config.sources`（Markdown 场景默认不展示）。
+   */
+  showSource?: boolean
+  /** 这一页按文档排版渲染（不套演示画布）；Markdown 场景自动为 true */
+  doc?: boolean
 }
 
 export const defineSceneMeta = (meta: SceneMeta): SceneMeta => meta

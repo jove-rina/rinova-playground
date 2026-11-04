@@ -43,7 +43,7 @@ onBeforeUnmount(() => {
 <template>
   <section v-if="slots.length" class="pw-output">
     <header class="pw-output__head">
-      <span class="pw-output__title">出参</span>
+      <span class="pw-output__title">输出</span>
       <div v-if="snapshots.length > 1" class="pw-output__tabs">
         <button
           v-for="(item, index) in snapshots"

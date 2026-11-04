@@ -7,7 +7,7 @@ export const sceneMeta = defineSceneMeta({
   title: '按钮 · 禁用与计数',
   order: 3,
   tags: ['disabled', 'click'],
-  description: 'disabled 透传到 reka-ui Primitive；点击次数作为出参展示。',
+  description: 'disabled 透传到 reka-ui Primitive；点击次数作为输出展示。',
 })
 </script>
 

@@ -1,7 +1,6 @@
 /** playground 的唯一配置入口。 */
 
 export type PlaygroundUiTheme = 'light' | 'dark' | 'auto'
-export type PlaygroundCodeViewer = 'monaco' | 'shiki'
 
 export interface PlaygroundConfig {
   /** 品牌标题，默认取 package.json 的 name */
@@ -10,13 +9,15 @@ export interface PlaygroundConfig {
   scenes?: string
   /** 是否展示源码面板，默认 true */
   sources?: boolean
-  /** 代码区实现：可编辑编辑器 / 只读高亮块，默认 'monaco' */
-  codeViewer?: PlaygroundCodeViewer
   theme?: {
     /** 外壳主题（12 个 CSS 变量），默认 'auto' */
     ui?: PlaygroundUiTheme
-    /** 代码区 shiki 主题名，默认 'vitesse-dark' */
-    code?: string
+    /**
+     * 演示画布主题，默认 'light'。
+     * 很多组件库只实现了浅色，画布固定浅色可以避免在暗色外壳里渲染成黑底黑字；
+     * 'auto' 表示跟随外壳。
+     */
+    stage?: PlaygroundUiTheme
   }
   /** 扫描时排除的 glob（相对 scenes 根） */
   exclude?: string[]

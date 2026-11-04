@@ -10,7 +10,7 @@ import Prose from '../../../components/Prose.vue'
 
 <template>
   <Prose title="sceneMeta" lead="可选。只有要改标题、排序、加说明或藏起场景时才写。">
-    <pre><code>&lt;script lang="ts"&gt;
+    <pre data-lang="vue"><code>&lt;script lang="ts"&gt;
 import { defineSceneMeta } from '@rinova/playground'
 
 export const sceneMeta = defineSceneMeta({

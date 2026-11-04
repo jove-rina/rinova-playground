@@ -16,7 +16,7 @@ import Prose from '../../../components/Prose.vue'
 <template>
   <Prose title="文件即场景" lead="侧栏不是配置出来的，是磁盘长出来的。">
     <h2>目录 → 侧栏 → 页内索引</h2>
-    <pre><code>src/scenes/
+    <pre data-lang="text"><code>src/scenes/
 ├── button/                 # 分组
 │   └── button/             # 组件页（侧栏第二级）
 │       ├── basic.vue       # 场景：页内一节

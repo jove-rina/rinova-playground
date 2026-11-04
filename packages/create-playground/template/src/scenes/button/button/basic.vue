@@ -16,7 +16,7 @@ import { MyButton } from '../../../components'
 
 const count = ref(0)
 
-// 声明可变入参：工具栏「参数」按钮可点，右侧渲染成表单，改了组件实时变
+// 声明可变输入：工具栏「参数」按钮可点，右侧渲染成表单，改了组件实时变
 const args = useSceneArgs(
   { label: '点我 +1', size: 'md' as 'sm' | 'md' | 'lg', disabled: false },
   { options: { size: ['sm', 'md', 'lg'] }, labels: { label: '文案', size: '尺寸', disabled: '禁用' } }

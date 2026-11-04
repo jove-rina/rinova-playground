@@ -100,6 +100,13 @@ const run = async (): Promise<void> => {
   const scenes = await call('scenario_list', { component: 'MyButton' })
   check('scenario_list 返回场景', scenes.text.includes('src/scenes/'), scenes.text.split('\n').length + ' 行')
 
+  const table = await call('capability_get', { component: 'MyTable' })
+  check(
+    'capability_get 输出具名类型定义',
+    table.text.includes('## Types') && table.text.includes('interface TableColumn') && table.text.includes('TableConfig'),
+    (table.text.match(/## Types[\s\S]{0,60}/) ?? [''])[0].replace(/\n/g, ' ')
+  )
+
   const coverage = await call('coverage_report', {})
   check('coverage_report 指出未覆盖 prop', /覆盖 \d+\/\d+/.test(coverage.text), coverage.text.split('\n')[0] ?? '')
 

@@ -27,11 +27,16 @@ export interface SceneDescriptor {
   file: string
   /** 相对项目根的路径，如 `src/scenes/button/button/basic.vue` */
   rel: string
-  lang: 'vue'
+  /** 场景文件类型：`.vue` 手写，或 `.md`（Markdown 内容页） */
+  lang: 'vue' | 'md'
   order: number
   tags: string[] | null
   description: string | null
   hidden: boolean
+  /** 是否在场景下方展示源码卡片（已按 场景 > 页 > 全局 合并好） */
+  showSource: boolean
+  /** 文档场景：不套演示画布，内容直接铺在页面上 */
+  doc: boolean
   load: () => Promise<{ default: Component }>
   raw: () => Promise<string>
   sources: { rel: string; raw: () => Promise<string> }[]
@@ -45,11 +50,22 @@ export interface PageDescriptor {
   groupDir: string
   title: string
   description: string | null
+  /** 分组排序权重：`config.groups` 的键索引；未登记的组排最后 */
+  groupOrder?: number
+  /** 1 = 组件页，2 = 子组件页（组件页下的子目录） */
+  depth?: 1 | 2
+  /** 父组件页 id（子组件页才有），如 `card/card` */
+  parentId?: string | null
+  /** 组内排序权重（pageMeta.order），缺省 MAX_SAFE_INTEGER */
   order: number
   /** 这一页演示的组件名（pageMeta.component 或按目录名匹配） */
   component: string | null
   /** API 补充说明（pageMeta.apiNotes），键格式 `events:press` */
   apiNotes: Record<string, string> | null
+  /** 这一页是否展示场景源码（pageMeta.showSource），未设置时跟随全局 sources */
+  showSource: boolean | null
+  /** 这一页是否文档页（pageMeta.doc） */
+  doc: boolean | null
 }
 
 /** 组件契约：由 vue-component-meta 从 TS 类型 + JSDoc 生成 */
@@ -91,6 +107,16 @@ export interface ComponentApiExposed {
   description: string
 }
 
+/** 契约里引用到的具名类型定义（源文件原文），汇总在 API 的「类型」页签 */
+export interface ComponentApiType {
+  name: string
+  kind: 'interface' | 'type'
+  /** 声明所在文件，相对项目根 */
+  file: string
+  /** 声明原文（含 JSDoc） */
+  code: string
+}
+
 export interface ComponentApi {
   name: string
   rel: string
@@ -98,6 +124,8 @@ export interface ComponentApi {
   events: ComponentApiEvent[]
   slots: ComponentApiSlot[]
   exposed: ComponentApiExposed[]
+  /** props / events / slots / exposed 类型里引用到的具名类型（一层），没有就是 undefined */
+  types?: ComponentApiType[]
   scenes: string[]
   uncoveredProps: string[]
   undocumented: string[]

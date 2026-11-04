@@ -1,4 +1,7 @@
 export { default as MyButton } from './MyButton.vue'
 export { default as MyCard } from './MyCard.vue'
+export { default as MyCardBody } from './MyCardBody.vue'
+export { default as MyCardFooter } from './MyCardFooter.vue'
+export { default as MyCardHeader } from './MyCardHeader.vue'
 export { default as MyInput } from './MyInput.vue'
 export { default as MyTable } from './MyTable.vue'

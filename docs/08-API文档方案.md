@@ -6,14 +6,16 @@
 >
 > **已知限制**：`vue-component-meta` 不解析 `defineEmits` 的 JSDoc（类型式与对象式都试过，`description` 恒为空）。补齐手段是 `<页>/meta.ts` 的 `apiNotes: { 'events:press': '说明' }`，已在本仓库三个示例里用上。
 
-## 对象类型的 API（P2.5，已实现）
+## 对象类型的 API → Types 页签（P2.5，已实现）
 
-对象 / 对象数组类型的 prop（`columns: TableColumn[]`、`config?: TableConfig`）与事件的对象参数（`payload: SortPayload`）会被**展开成字段表**：字段名、类型、是否必填、说明（来自 interface 里的 JSDoc）。
+对象 / 对象数组 prop 的类型字符串（`columns: TableColumn[]`）本身看不出结构。做法不是把字段摊进表格，而是**把声明原文汇总成 Types 页签**：
 
-- 数据来自 `prop.getTypeObject()` 拿到的 TS 类型对象：先解 `| undefined` 的联合，再解数组取元素类型，最后 `checker.getPropertiesOfType()` 逐字段取类型与文档
-- 只展开**一层**（字段本身是对象时不再往里钻），避免 manifest 膨胀
-- UI：名称下方多一个「▸ N 个字段」，点开是嵌套表；对象参数走同一套渲染
-- 实测：`columns` 展开 4 个字段（`align` 的联合类型完整显示）、`config` 3 个、`sortChange` 的事件参数 2 个且带说明
+- 数据来自 `prop.getTypeObject()` / 事件参数元组：先解 `| undefined` 的联合、再解数组 / `Set` 等容器取元素类型，命中本项目的 `interface` / `type` 符号后切出声明原文（含 JSDoc），写进 `manifest.components[].types`
+- 只收本项目源码里的类型，`node_modules` 与 TS lib（`Array` / `Record` / `HTMLElement`）一律跳过 —— 那些是噪音
+- UI：页签变成 `Props / Events / Slots / Exposes / Types`，Types 里每个类型一块等宽高亮代码 + 来源文件 + 复制；Props 表里 `TableColumn[]` 这类类型名变成可点链接，点击切到 Types 页签并高亮该块
+- **不做字段展开**：嵌套表既占宽又看不出归属，且接口成员本来就没有默认值这个概念；成员说明与默认值都写在接口的 JSDoc 里（`/** 列宽（px），默认 120 */`）
+- 实测：`MyTable` 汇总 `TableColumn`（4 字段）/ `TableConfig`（3 字段）/ `SortPayload`（2 字段）三个声明，含全部 JSDoc；`rows: Record<...>` 没有具名字段，按预期不出现
+- `pnpm verify` 有对应项：`类型定义汇总（声明原文 / JSDoc / 来源文件）`
 
 ## 0. 结论
 
@@ -52,6 +54,7 @@ interface ManifestComponent {
   events: { name; type; signature; description }[]            // 新增 type/signature/description
   slots: { name; type; description }[]                        // 新增 type/description
   exposed: { name; type; description }[]                      // 新增 type/description
+  types?: { name; kind; file; code }[]                        // 新增：契约引用到的具名类型声明原文（含 JSDoc）
   scenes: string[]
   uncoveredProps: string[]
   undocumented: string[]                                      // 新增：没写 JSDoc 的 API 名
@@ -102,7 +105,7 @@ disabled        boolean | undefined      false      —                   禁用
 - 类型用等宽字体 + 可点击复制；
 - 说明为空的行标黄，末尾一个「补说明」徽标（提示去写 JSDoc，不阻塞）；
 - 「演示」列列出引用了这个 API 的场景，点击滚到对应 `#场景名`；
-- Events 的「类型」列显示参数：`[event: FocusEvent]`，并在展开里给完整 signature；
+- Events 的「类型」列显示参数：`[event: FocusEvent]`，下一行给完整 signature；
 - 表头给一行汇总：`Props 6 · Events 5 · Slots 2 · Exposes 3 · 缺说明 1`。
 
 ## 4. 场景内摘要升级

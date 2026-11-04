@@ -39,20 +39,20 @@ export const sceneMeta = defineSceneMeta({
 </script>
 ```
 
-## 入参 / 出参面板
+## 输入 / 输出面板
 
 在场景的 `<script setup>` 里声明，工具栏「参数」按钮就会启用：
 
 ```ts
 import { useSceneArgs, useSceneOutput } from '@rinova/playground'
 
-// 入参：面板渲染成表单，改了组件立刻变（生产环境同样可用）
+// 输入：面板渲染成表单，改了组件立刻变（生产环境同样可用）
 const args = useSceneArgs(
   { label: '点我', size: 'md' as 'sm' | 'md' | 'lg', disabled: false },
   { options: { size: ['sm', 'md', 'lg'] }, labels: { label: '文案', size: '尺寸', disabled: '禁用' } }
 )
 
-// 出参：面板每 400ms 取一次快照
+// 输出：面板每 400ms 取一次快照
 useSceneOutput(() => ({ clicked: count.value }))
 ```
 

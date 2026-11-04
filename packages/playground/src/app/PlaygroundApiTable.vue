@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { Copy } from '@lucide/vue'
+import CodeBlock from '../code/CodeBlock.vue'
 import { copyText } from '../code/clipboard'
 import { toast } from '../components/toast'
 import type { ComponentApi, SceneDescriptor } from '../types'
@@ -16,25 +17,31 @@ const props = defineProps<{
 
 const emit = defineEmits<{ jump: [sceneName: string] }>()
 
-type TabKey = 'props' | 'events' | 'slots' | 'exposed'
+type TabKey = 'props' | 'events' | 'slots' | 'exposed' | 'types'
 
 const TAB_LABELS: { key: TabKey; label: string }[] = [
   { key: 'props', label: 'Props' },
   { key: 'events', label: 'Events' },
   { key: 'slots', label: 'Slots' },
   { key: 'exposed', label: 'Exposes' },
+  { key: 'types', label: 'Types' },
 ]
 
 const tab = ref<TabKey>('props')
+
+const typeDefs = computed(() => props.contract.types ?? [])
 
 const counts = computed(() => ({
   props: props.contract.props.length,
   events: props.contract.events.length,
   slots: props.contract.slots.length,
   exposed: props.contract.exposed.length,
+  types: typeDefs.value.length,
 }))
 
-const total = computed(() => Object.values(counts.value).reduce((sum, value) => sum + value, 0))
+const total = computed(
+  () => counts.value.props + counts.value.events + counts.value.slots + counts.value.exposed
+)
 const undocumentedCount = computed(() => props.contract.undocumented.length)
 
 const tabs = computed(() =>
@@ -47,6 +54,13 @@ const scenesOf = (kind: TabKey, name: string): SceneDescriptor[] =>
 
 const notesOf = (kind: TabKey, name: string): string => props.notes?.[`${kind}:${name}`] ?? ''
 
+/** 类型名 → 声明，供类型列点击跳转 */
+const typeNames = computed(() => typeDefs.value.map((item) => item.name))
+
+/** 类型字符串里引用到的具名类型（`TableColumn[]` → `TableColumn`） */
+const linkedType = (text: string): string =>
+  typeNames.value.find((name) => new RegExp(`\\b${name}\\b`).test(text)) ?? ''
+
 const rows = computed(() => {
   if (tab.value === 'props') {
     return props.contract.props.map((item) => ({
@@ -57,7 +71,6 @@ const rows = computed(() => {
       required: item.required,
       description: item.description || notesOf('props', item.name),
       signature: '',
-      fields: item.fields ?? [],
       demos: scenesOf('props', item.name),
     }))
   }
@@ -70,7 +83,6 @@ const rows = computed(() => {
       required: false,
       description: item.description || notesOf('events', item.name),
       signature: item.signature,
-      fields: item.fields ?? [],
       demos: scenesOf('events', item.name),
     }))
   }
@@ -83,27 +95,31 @@ const rows = computed(() => {
       required: false,
       description: item.description || notesOf('slots', item.name),
       signature: '',
-      fields: [],
       demos: scenesOf('slots', item.name),
     }))
   }
-  return props.contract.exposed.map((item) => ({
-    key: item.name,
-    name: item.name,
-    type: item.type,
-    default: '',
-    required: false,
-    description: item.description || notesOf('exposed', item.name),
-    signature: '',
-    fields: [],
-    demos: scenesOf('exposed', item.name),
-  }))
+  if (tab.value === 'exposed') {
+    return props.contract.exposed.map((item) => ({
+      key: item.name,
+      name: item.name,
+      type: item.type,
+      default: '',
+      required: false,
+      description: item.description || notesOf('exposed', item.name),
+      signature: '',
+      demos: scenesOf('exposed', item.name),
+    }))
+  }
+  return []
 })
 
-/** 对象类型 prop 的字段展开 */
-const expanded = ref<Record<string, boolean>>({})
-const toggleFields = (key: string): void => {
-  expanded.value = { ...expanded.value, [key]: !expanded.value[key] }
+/** 类型页签里当前高亮的类型 */
+const focusedType = ref('')
+const openType = async (name: string): Promise<void> => {
+  tab.value = 'types'
+  focusedType.value = name
+  await nextTick()
+  rootEl.value?.querySelector(`[data-type="${CSS.escape(name)}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
 }
 
 /** 高亮来自场景内标签的点击 */
@@ -155,88 +171,99 @@ const copyType = async (text: string): Promise<void> => {
       </div>
     </header>
 
-    <table class="pw-api__table">
-      <thead>
-        <tr>
-          <th class="pw-api__col-name">名称</th>
-          <th class="pw-api__col-type">类型</th>
-          <th v-if="tab === 'props'" class="pw-api__col-default">默认值</th>
-          <th>说明</th>
-          <th class="pw-api__col-demo">演示</th>
-        </tr>
-      </thead>
-      <tbody>
-        <template v-for="row in rows" :key="row.key">
-        <tr
-          :data-api="row.name"
-          :class="{ 'is-missing': !row.description, 'is-focus': row.name === highlighted }"
+    <div class="pw-api__body">
+      <table v-if="tab !== 'types'" class="pw-api__table" :class="{ 'is-props': tab === 'props' }">
+        <thead>
+          <tr>
+            <th class="pw-api__col-name">名称</th>
+            <th class="pw-api__col-type">类型</th>
+            <th v-if="tab === 'props'" class="pw-api__col-default">默认值</th>
+            <th>说明</th>
+            <th class="pw-api__col-demo">演示</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="row in rows"
+            :key="row.key"
+            :data-api="row.name"
+            :class="{ 'is-missing': !row.description, 'is-focus': row.name === highlighted }"
+          >
+            <td class="pw-api__name-cell">
+              <div class="pw-api__name-line">
+                <code>{{ row.name }}</code>
+                <span v-if="row.required" class="pw-api__required">必填</span>
+              </div>
+            </td>
+            <td>
+              <button
+                v-if="linkedType(row.type)"
+                type="button"
+                class="pw-api__type is-link"
+                :title="`查看 ${linkedType(row.type)} 定义`"
+                @click="openType(linkedType(row.type))"
+              >
+                {{ row.type }}
+              </button>
+              <button
+                v-else-if="row.type"
+                type="button"
+                class="pw-api__type"
+                :title="`复制 ${row.type}`"
+                @click="copyType(row.type)"
+              >
+                {{ row.type }}
+              </button>
+              <span v-else class="pw-api__empty">—</span>
+              <div v-if="row.signature && row.signature !== row.type" class="pw-api__signature">{{ row.signature }}</div>
+            </td>
+            <td v-if="tab === 'props'" class="pw-api__default" :title="row.default">
+              <span v-if="row.default">{{ row.default }}</span>
+              <span v-else class="pw-api__empty">—</span>
+            </td>
+            <td class="pw-api__desc">
+              <template v-if="row.description">{{ row.description }}</template>
+              <span v-else class="pw-api__empty" title="补 JSDoc 就会显示在这里">缺说明</span>
+            </td>
+            <td class="pw-api__demo-cell">
+              <div class="pw-api__demo">
+                <button
+                  v-for="demo in row.demos"
+                  :key="demo.id"
+                  type="button"
+                  class="pw-api__demo-link"
+                  @click="emit('jump', demo.name)"
+                >
+                  {{ demo.title }}
+                </button>
+                <span v-if="!row.demos.length" class="pw-api__empty">无</span>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div v-else class="pw-api__types">
+        <article
+          v-for="item in typeDefs"
+          :key="item.name"
+          class="pw-api__type-card"
+          :class="{ 'is-focus': item.name === focusedType }"
+          :data-type="item.name"
         >
-          <td class="pw-api__name-cell">
-            <div class="pw-api__name-line">
-              <code>{{ row.name }}</code>
-              <span v-if="row.required" class="pw-api__required">必填</span>
-            </div>
-            <button
-              v-if="row.fields.length"
-              type="button"
-              class="pw-api__expand"
-              @click="toggleFields(row.key)"
-            >
-              {{ expanded[row.key] ? '▾' : '▸' }} {{ row.fields.length }} 个字段
+          <header class="pw-api__type-head">
+            <code class="pw-api__type-name">{{ item.name }}</code>
+            <span class="pw-api__type-kind">{{ item.kind }}</span>
+            <span class="pw-api__type-file" :title="item.file">{{ item.file }}</span>
+            <button type="button" class="pw-api__copy" :title="`复制 ${item.name} 定义`" @click="copyType(item.code)">
+              <Copy :size="12" :stroke-width="2" />
+              复制
             </button>
-          </td>
-          <td>
-            <button type="button" class="pw-api__type" :title="`复制 ${row.type}`" @click="copyType(row.type)">
-              {{ row.type || '—' }}
-            </button>
-            <div v-if="row.signature && row.signature !== row.type" class="pw-api__signature">{{ row.signature }}</div>
-          </td>
-          <td v-if="tab === 'props'" class="pw-api__default">{{ row.default || '—' }}</td>
-          <td class="pw-api__desc">
-            <template v-if="row.description">{{ row.description }}</template>
-            <span v-else class="pw-api__missing">补 JSDoc 就会显示在这里</span>
-          </td>
-          <td class="pw-api__demo">
-            <button
-              v-for="demo in row.demos"
-              :key="demo.id"
-              type="button"
-              class="pw-api__demo-link"
-              @click="emit('jump', demo.name)"
-            >
-              {{ demo.title }}
-            </button>
-            <span v-if="!row.demos.length" class="pw-api__no-demo">无</span>
-          </td>
-        </tr>
-        <tr v-if="row.fields.length && expanded[row.key]" :key="`${row.key}-fields`" class="pw-api__fields-row">
-          <td :colspan="tab === 'props' ? 5 : 4">
-            <table class="pw-api__fields">
-              <thead>
-                <tr>
-                  <th>字段</th>
-                  <th>类型</th>
-                  <th class="pw-api__fields-required">必填</th>
-                  <th>说明</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="field in row.fields" :key="field.name" :class="{ 'is-missing': !field.description }">
-                  <td><code>{{ field.name }}</code></td>
-                  <td><span class="pw-api__field-type">{{ field.type }}</span></td>
-                  <td class="pw-api__fields-required">{{ field.required ? '是' : '否' }}</td>
-                  <td>
-                    <template v-if="field.description">{{ field.description }}</template>
-                    <span v-else class="pw-api__missing">补 JSDoc 就会显示在这里</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </td>
-        </tr>
-        </template>
-      </tbody>
-    </table>
+          </header>
+          <CodeBlock :code="item.code" lang="ts" />
+        </article>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -244,13 +271,26 @@ const copyType = async (text: string): Promise<void> => {
 .pw-api {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  flex: 1;
+  min-height: 0;
 
+  /* 页签行固定：flex 布局里 flex: 0 0 auto，滚动交给下面的 __body */
   &__head {
+    flex: 0 0 auto;
     display: flex;
     align-items: flex-end;
     gap: 16px;
     flex-wrap: wrap;
+    padding: 20px 24px 10px;
+    border-bottom: 1px solid var(--rp-color-border);
+  }
+
+  /* 内容区：自己滚，滚动条在这个区域右侧 */
+  &__body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 14px 24px 32px;
   }
 
   &__title {
@@ -324,6 +364,8 @@ const copyType = async (text: string): Promise<void> => {
     letter-spacing: 0.04em;
     text-align: left;
     text-transform: uppercase;
+    /* 列宽按内容自适应时，表头不要折成「默认 / 值」 */
+    white-space: nowrap;
   }
 
   td {
@@ -340,16 +382,26 @@ const copyType = async (text: string): Promise<void> => {
     color: var(--rp-color-text-muted);
   }
 
+  &__col-name {
+    width: 13%;
+  }
+
   &__col-type {
     width: 32%;
   }
 
+  /* Props 多一列默认值，类型列让出宽度 */
+  &__table.is-props &__col-type {
+    width: 24%;
+  }
+
+  /* 默认值列不设宽度：按内容自适应（对象原文单行），说明列吃掉剩余空间 */
   &__col-default {
-    width: 12%;
+    width: 1%;
   }
 
   &__col-demo {
-    width: 18%;
+    width: 14%;
   }
 
   &__name-cell code {
@@ -361,60 +413,77 @@ const copyType = async (text: string): Promise<void> => {
     display: flex;
     align-items: center;
     gap: 6px;
+    white-space: nowrap;
   }
 
-  &__expand {
-    margin-top: 4px;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: var(--rp-color-primary);
-    font: inherit;
-    font-size: 11px;
-    cursor: pointer;
+  &__types {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
   }
 
-  &__fields-row > td {
-    padding: 0 10px 10px 26px;
+  &__type-card {
+    border: 1px solid var(--rp-color-border);
+    border-radius: 10px;
+    overflow: hidden;
+
+    &.is-focus {
+      border-color: var(--rp-color-primary);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--rp-color-primary) 12%, transparent);
+    }
+  }
+
+  &__type-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--rp-color-border);
     background: color-mix(in srgb, var(--rp-color-surface) 60%, transparent);
   }
 
-  &__fields {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 11.5px;
-
-    th {
-      padding: 6px 8px;
-      border-bottom: 1px solid var(--rp-color-border);
-      color: var(--rp-color-text-muted);
-      font-size: 10.5px;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-    }
-
-    td {
-      padding: 6px 8px;
-      border-bottom: 1px solid color-mix(in srgb, var(--rp-color-border) 45%, transparent);
-    }
-
-    code {
-      font-family: var(--rp-font-mono);
-      font-size: 11.5px;
-    }
+  &__type-name {
+    font-family: var(--rp-font-mono);
+    font-size: 12px;
+    font-weight: 600;
   }
 
-  &__field-type {
+  &__type-kind {
+    padding: 0 6px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--rp-color-primary) 10%, transparent);
+    color: var(--rp-color-primary);
+    font-size: 10px;
+  }
+
+  &__type-file {
+    min-width: 0;
+    overflow: hidden;
     color: var(--rp-color-text-muted);
     font-family: var(--rp-font-mono);
-    font-size: 11px;
-    word-break: break-word;
+    font-size: 10.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  &__fields-required {
-    width: 56px;
+  &__copy {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    padding: 2px 8px;
+    border: 1px solid var(--rp-color-border);
+    border-radius: 999px;
+    background: transparent;
     color: var(--rp-color-text-muted);
-    text-align: center;
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+
+    &:hover {
+      border-color: var(--rp-color-primary);
+      color: var(--rp-color-primary);
+    }
   }
 
   &__required {
@@ -440,6 +509,13 @@ const copyType = async (text: string): Promise<void> => {
     &:hover {
       color: var(--rp-color-primary);
     }
+
+    &.is-link {
+      color: var(--rp-color-primary);
+      cursor: pointer;
+      text-decoration: underline dotted;
+      text-underline-offset: 3px;
+    }
   }
 
   &__signature {
@@ -451,20 +527,34 @@ const copyType = async (text: string): Promise<void> => {
   }
 
   &__default {
+    max-width: 420px;
+    overflow: hidden;
     color: var(--rp-color-text-muted);
     font-family: var(--rp-font-mono);
     font-size: 11.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   &__desc {
     color: var(--rp-color-text);
   }
 
-  &__missing {
-    color: var(--rp-color-warning);
-    font-size: 11.5px;
+  /* 空值统一用虚线胶囊，和演示胶囊区分开 */
+  &__empty {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 7px;
+    border: 1px dashed var(--rp-color-border);
+    border-radius: 999px;
+    color: var(--rp-color-text-muted);
+    font-family: inherit;
+    font-size: 11px;
+    line-height: 18px;
+    white-space: nowrap;
   }
 
+  /* 演示列内容包一层：td 上用 flex 会破坏表格盒模型，边框会断 */
   &__demo {
     display: flex;
     flex-wrap: wrap;
@@ -473,6 +563,7 @@ const copyType = async (text: string): Promise<void> => {
 
   &__demo-link {
     padding: 1px 7px;
+    white-space: nowrap;
     border: 1px solid var(--rp-color-border);
     border-radius: 999px;
     background: transparent;
@@ -487,9 +578,5 @@ const copyType = async (text: string): Promise<void> => {
     }
   }
 
-  &__no-demo {
-    color: var(--rp-color-text-muted);
-    font-size: 11px;
-  }
 }
 </style>

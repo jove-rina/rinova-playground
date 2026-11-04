@@ -6,6 +6,7 @@ export default defineConfig({
   port: 5273,
   components: ['src/lib/**/*.vue'],
   groups: {
+    intro: '介绍',
     button: 'Button',
     card: 'Card',
     input: 'Input',

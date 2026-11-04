@@ -17,7 +17,7 @@ export interface SceneOutputBinding {
 let seq = 0
 type Slot = SceneOutputBinding & { order: number }
 
-/** 当前场景挂载的全部出参槽位；由面板轮询调用，纯前端实现 */
+/** 当前场景挂载的全部输出槽位；由面板轮询调用，纯前端实现 */
 export const currentOutputSlots = shallowRef<SceneOutputBinding[]>([])
 
 /** 兼容旧接口：第一个槽位 */
@@ -29,7 +29,7 @@ const sortSlots = (list: Slot[]): SceneOutputBinding[] =>
   [...list].sort((a, b) => a.order - b.order)
 
 /**
- * 把场景里的响应式状态暴露成「出参」快照。
+ * 把场景里的响应式状态暴露成「输出」快照。
  * 一个场景多个 demo 时传 `slot` 区分，例如 `useSceneOutput(() => ({ ... }), '主按钮')`。
  */
 export const useSceneOutput = (getter: () => SceneSnapshot, slot?: string): void => {

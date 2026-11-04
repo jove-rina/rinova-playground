@@ -7,13 +7,11 @@ import type { Plugin, ViteDevServer } from 'vite'
 
 const VIRTUAL_CONFIG = 'virtual:playground/config'
 const VIRTUAL_SCENES = 'virtual:playground/scenes'
-const VIRTUAL_EDITOR_CSS = 'virtual:playground/editor-css'
 const VIRTUAL_API = 'virtual:playground/api'
 
 const RESOLVED_ID: Record<string, string> = {
   [VIRTUAL_CONFIG]: `\0${VIRTUAL_CONFIG}`,
   [VIRTUAL_SCENES]: `\0${VIRTUAL_SCENES}`,
-  [VIRTUAL_EDITOR_CSS]: `\0${VIRTUAL_EDITOR_CSS}`,
   [VIRTUAL_API]: `\0${VIRTUAL_API}`,
 }
 
@@ -48,6 +46,8 @@ interface SceneMeta {
   files?: string[]
   section?: SceneSection
   api?: string[]
+  /** 是否展示源码；覆盖 page 与全局配置 */
+  showSource?: boolean
 }
 
 interface PageMeta {
@@ -58,6 +58,10 @@ interface PageMeta {
   component?: string
   /** API 补充说明，键格式 `events:press` */
   apiNotes?: Record<string, string>
+  /** 这一页是否展示源码；不写则跟随全局 sources（Markdown 场景默认不展示） */
+  showSource?: boolean
+  /** 这一页是文档页：不套演示画布，内容直接铺在页面上（Markdown 场景自动为 true） */
+  doc?: boolean
 }
 
 interface SceneSource {
@@ -93,6 +97,12 @@ interface SceneEntry {
   hidden?: boolean
   /** 源码面板的文件列表（场景自身 + sceneMeta.files） */
   sources: SceneSource[]
+  /** 场景文件类型 */
+  lang: 'vue' | 'md'
+  /** 是否展示源码卡片（场景 > 页 > 全局 合并后的结果） */
+  showSource: boolean
+  /** 文档场景：不套演示画布 */
+  doc: boolean
 }
 
 interface PageEntry {
@@ -100,13 +110,24 @@ interface PageEntry {
   id: string
   group: string
   groupDir: string
+  /** 分组排序权重：`config.groups` 的键索引，未登记的组为 MAX_SAFE_INTEGER */
+  groupOrder: number
+  /** 父组件页 id（二级组件才有），如 `card/card` */
+  parentId?: string
+  /** 1 = 组件页，2 = 子组件页 */
+  depth: 1 | 2
   title: string
   description?: string
+  /** 组内排序权重（pageMeta.order），缺省 MAX_SAFE_INTEGER */
   order: number
   /** 页绑定的组件名（pageMeta.component） */
   component?: string
   /** API 补充说明 */
   apiNotes?: Record<string, string>
+  /** 页级源码开关（pageMeta.showSource） */
+  showSource?: boolean
+  /** 页级文档模式（pageMeta.doc） */
+  doc?: boolean
 }
 
 interface PlaygroundUserConfig {
@@ -136,6 +157,30 @@ const titleize = (name: string): string => {
 }
 
 const toPosix = (value: string): string => value.split(path.sep).join('/')
+
+/** `---` 头：`key: value` / `key: [a, b]`。只用于 Markdown 场景，标题排序标签够用 */
+const parseFrontmatter = (source: string): Record<string, string | string[]> => {
+  const match = source.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/)
+  if (!match) return {}
+  const data: Record<string, string | string[]> = {}
+  for (const raw of (match[1] ?? '').split(/\r?\n/)) {
+    const line = raw.trim()
+    if (!line || line.startsWith('#')) continue
+    const index = line.indexOf(':')
+    if (index < 1) continue
+    const key = line.slice(0, index).trim()
+    const value = line.slice(index + 1).trim()
+    if (!key) continue
+    data[key] = /^\[.*\]$/.test(value)
+      ? value
+          .slice(1, -1)
+          .split(',')
+          .map((item) => item.trim().replace(/^['"]|['"]$/g, ''))
+          .filter(Boolean)
+      : value.replace(/^['"]|['"]$/g, '')
+  }
+  return data
+}
 
 const isSection = (value: unknown): value is SceneSection =>
   typeof value === 'string' && (SECTION_ORDER as readonly string[]).includes(value)
@@ -180,10 +225,16 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
       .map((entry) => entry.name)
       .sort()
 
-  const listVue = (dir: string): string[] =>
+  /** 场景文件：`.vue` 手写场景，或 `.md`（Markdown 内容页） */
+  const listScenes = (dir: string): string[] =>
     fs
       .readdirSync(dir, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && entry.name.endsWith('.vue') && !entry.name.startsWith('.'))
+      .filter(
+        (entry) =>
+          entry.isFile() &&
+          (entry.name.endsWith('.vue') || entry.name.endsWith('.md')) &&
+          !entry.name.startsWith('.')
+      )
       .map((entry) => entry.name)
       .sort()
 
@@ -194,6 +245,23 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
       source = fs.readFileSync(file, 'utf8')
     } catch {
       return {}
+    }
+
+    // Markdown 场景：标题 / 排序 / 标签写在 `---` 头里
+    if (file.endsWith('.md')) {
+      const data = parseFrontmatter(source)
+      const tags = data.tags
+      const api = data.api
+      return {
+        title: typeof data.title === 'string' ? data.title : undefined,
+        order: data.order !== undefined && Number.isFinite(Number(data.order)) ? Number(data.order) : undefined,
+        tags: Array.isArray(tags) ? tags : typeof tags === 'string' ? tags.split(',').map((item) => item.trim()).filter(Boolean) : undefined,
+        description: typeof data.description === 'string' ? data.description : undefined,
+        hideInNav: data.hideInNav === 'true' ? true : undefined,
+        section: isSection(data.section) ? data.section : undefined,
+        api: Array.isArray(api) ? api : typeof api === 'string' ? api.split(',').map((item) => item.trim()).filter(Boolean) : undefined,
+        showSource: data.showSource === 'false' ? false : data.showSource === 'true' ? true : undefined,
+      }
     }
 
     const { descriptor } = parseSfc(source, { filename: file })
@@ -264,6 +332,8 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
             meta.apiNotes && typeof meta.apiNotes === 'object'
               ? Object.fromEntries(Object.entries(meta.apiNotes).map(([key, value]) => [key, String(value)]))
               : undefined,
+          showSource: typeof meta.showSource === 'boolean' ? meta.showSource : undefined,
+          doc: typeof meta.doc === 'boolean' ? meta.doc : undefined,
         }
       } catch (error) {
         console.warn(
@@ -284,38 +354,56 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
       console.warn(`[rinova-playground] 忽略 ${toPosix(path.relative(root, file))}：${reason}`)
     }
 
-    for (const name of listVue(scenesDir)) {
+    for (const name of listScenes(scenesDir)) {
       ignored(path.join(scenesDir, name), '场景必须放在 分组/组件页/ 目录下')
     }
 
-    for (const groupDir of listDirs(scenesDir)) {
+    // 分组顺序 = config.groups 的声明顺序；未登记的组排在最后（再按目录名）
+    const groupKeys = Object.keys(config.groups ?? {})
+    const groupOrderOf = (dir: string): number => {
+      const index = groupKeys.indexOf(dir)
+      return index === -1 ? Number.MAX_SAFE_INTEGER : index
+    }
+
+    const groupDirs = listDirs(scenesDir).sort((a, b) => groupOrderOf(a) - groupOrderOf(b) || a.localeCompare(b))
+    for (const groupDir of groupDirs) {
       const groupAbs = path.join(scenesDir, groupDir)
       const groupLabel = config.groups?.[groupDir] ?? titleize(groupDir)
 
-      for (const name of listVue(groupAbs)) {
+      for (const name of listScenes(groupAbs)) {
         ignored(path.join(groupAbs, name), '分组目录下不能直接放场景，请放进组件页目录')
       }
 
-      for (const pageDir of listDirs(groupAbs)) {
-        const pageAbs = path.join(groupAbs, pageDir)
-        const pageId = `${groupDir}/${pageDir}`
+      /** 扫一个页（一级组件页或二级子组件页）：读页 meta + 收自己的场景 */
+      const collectPage = async (
+        pageAbs: string,
+        pageId: string,
+        pageDir: string,
+        depth: 1 | 2,
+        parentId?: string
+      ): Promise<PageEntry> => {
         const meta = await readPageMeta(pageAbs)
         const pageTitle = meta.title ?? titleize(pageDir)
-
-        pages.push({
+        const page: PageEntry = {
           id: pageId,
           group: groupLabel,
           groupDir,
+          groupOrder: groupOrderOf(groupDir),
+          depth,
           title: pageTitle,
           description: meta.description,
           order: typeof meta.order === 'number' ? meta.order : Number.MAX_SAFE_INTEGER,
           component: meta.component,
           apiNotes: meta.apiNotes,
-        })
+          showSource: meta.showSource,
+          doc: meta.doc,
+        }
+        if (parentId) page.parentId = parentId
 
         const seen = new Set<string>()
-        for (const fileName of listVue(pageAbs)) {
-          const name = fileName.replace(/\.vue$/, '')
+        for (const fileName of listScenes(pageAbs)) {
+          const isMarkdown = fileName.endsWith('.md')
+          const name = fileName.replace(/\.(vue|md)$/, '')
           if (seen.has(name)) {
             ignored(path.join(pageAbs, fileName), `同一页内场景名重复（${name}）`)
             continue
@@ -323,7 +411,7 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
           seen.add(name)
 
           const abs = path.join(pageAbs, fileName)
-          checkSceneStyle(abs)
+          if (!isMarkdown) checkSceneStyle(abs)
           const sceneMeta = await readSceneMeta(abs)
           const relPath = toPosix(path.relative(root, abs))
 
@@ -344,6 +432,11 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
             tags: sceneMeta.tags,
             description: sceneMeta.description,
             hidden: sceneMeta.hideInNav,
+            lang: isMarkdown ? 'md' : 'vue',
+            doc: isMarkdown || meta.doc === true,
+            // 优先级：场景 > 页 > 全局；Markdown 场景默认不展示源码
+            showSource:
+              sceneMeta.showSource ?? meta.showSource ?? (isMarkdown ? false : config.sources !== false),
             sources: [
               { rel: relPath, url: `/${relPath}` },
               ...(sceneMeta.files ?? [])
@@ -360,11 +453,33 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
             ],
           })
         }
+        return page
+      }
+
+      // 一级 = 组件页；组件页下再深一层 = 子组件页
+      const groupPages: PageEntry[] = []
+      for (const pageDir of listDirs(groupAbs)) {
+        const pageAbs = path.join(groupAbs, pageDir)
+        const page = await collectPage(pageAbs, `${groupDir}/${pageDir}`, pageDir, 1)
+        groupPages.push(page)
+
+        for (const subDir of listDirs(pageAbs)) {
+          const subAbs = path.join(pageAbs, subDir)
+          groupPages.push(await collectPage(subAbs, `${page.id}/${subDir}`, subDir, 2, page.id))
+        }
+      }
+
+      // 组内顺序：一级按 order / 目录名，二级紧跟自己的父页（同样按 order / 目录名）
+      const byOrder = (a: PageEntry, b: PageEntry): number => a.order - b.order || a.id.localeCompare(b.id)
+      const roots = groupPages.filter((item) => item.depth === 1).sort(byOrder)
+      for (const root of roots) {
+        pages.push(root)
+        pages.push(...groupPages.filter((item) => item.parentId === root.id).sort(byOrder))
       }
     }
 
     scenes.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
-    pages.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+    // pages 已在扫描时按「组声明序 → 组内顺序 → 子组件紧跟父页」排好，这里不再全局重排（否则父子会被打散）
   }
 
   /** 生成契约清单（.playground/manifest.json + llms.txt + coverage.md） */
@@ -474,6 +589,7 @@ export const pageComponents = ${JSON.stringify(pageComponents)}
   }
 
   const scenesModuleCode = (): string => {
+    const hasMarkdown = scenes.some((scene) => scene.lang === 'md')
     const sceneCode = scenes
       .map((scene) => {
         const sources = `[${scene.sources
@@ -483,6 +599,12 @@ export const pageComponents = ${JSON.stringify(pageComponents)}
             )}).then((mod) => mod.default) }`
           )
           .join(', ')}]`
+
+        // `.md` 场景：读原文 → 交给 defineMarkdownScene 包装成组件
+        const loader =
+          scene.lang === 'md'
+            ? `() => import(${JSON.stringify(`${scene.url}?raw`)}).then((mod) => ({ default: defineMarkdownScene(mod.default) }))`
+            : `() => import(${JSON.stringify(scene.url)})`
 
         return `  {
     id: ${JSON.stringify(scene.id)},
@@ -497,13 +619,15 @@ export const pageComponents = ${JSON.stringify(pageComponents)}
     path: ${JSON.stringify(scene.url)},
     file: ${JSON.stringify(scene.file)},
     rel: ${JSON.stringify(scene.rel)},
-    lang: 'vue',
+    lang: ${JSON.stringify(scene.lang)},
     order: ${JSON.stringify(scene.order)},
     tags: ${JSON.stringify(scene.tags ?? null)},
     description: ${JSON.stringify(scene.description ?? null)},
     hidden: ${JSON.stringify(scene.hidden === true)},
+    showSource: ${JSON.stringify(scene.showSource)},
+    doc: ${JSON.stringify(scene.doc)},
     sources: ${sources},
-    load: () => import(${JSON.stringify(scene.url)}),
+    load: ${loader},
     raw: () => import(${JSON.stringify(`${scene.url}?raw`)}).then((mod) => mod.default)
   }`
       })
@@ -515,16 +639,21 @@ export const pageComponents = ${JSON.stringify(pageComponents)}
     id: ${JSON.stringify(page.id)},
     group: ${JSON.stringify(page.group)},
     groupDir: ${JSON.stringify(page.groupDir)},
+    groupOrder: ${JSON.stringify(page.groupOrder)},
+    depth: ${JSON.stringify(page.depth)},
+    parentId: ${JSON.stringify(page.parentId ?? null)},
     title: ${JSON.stringify(page.title)},
     description: ${JSON.stringify(page.description ?? null)},
     order: ${JSON.stringify(page.order)},
     component: ${JSON.stringify(page.component ?? null)},
-    apiNotes: ${JSON.stringify(page.apiNotes ?? null)}
+    apiNotes: ${JSON.stringify(page.apiNotes ?? null)},
+    showSource: ${JSON.stringify(page.showSource ?? null)},
+    doc: ${JSON.stringify(page.doc ?? null)}
   }`
       )
       .join(',\n')
 
-    return `export const scenes = [
+    return `${hasMarkdown ? "import { defineMarkdownScene } from '@rinova/playground'\n" : ''}export const scenes = [
 ${sceneCode}
 ]
 
@@ -574,10 +703,6 @@ ${pageCode}
     resolveId: (id) => RESOLVED_ID[id] ?? null,
 
     load: async (id) => {
-      if (id === RESOLVED_ID[VIRTUAL_EDITOR_CSS]) {
-        // 转发给使用方的解析器：编辑器样式只在打开代码面板时才拉
-        return "import '@rinova/playground/editor.css'"
-      }
       if (id === RESOLVED_ID[VIRTUAL_API]) {
         await ensureReady()
         return apiModuleCode()

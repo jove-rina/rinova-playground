@@ -28,6 +28,7 @@ interface ManifestComponent {
   events: { name: string; type: string; signature: string; description: string; fields?: ManifestField[] }[]
   slots: { name: string; type: string; description: string }[]
   exposed: { name: string; type: string; description: string }[]
+  types?: { name: string; kind: string; file: string; code: string }[]
   scenes: string[]
   uncoveredProps: string[]
 }
@@ -130,6 +131,13 @@ const formatComponent = (root: string, component: ManifestComponent, manifest: M
     lines.push('', '## Exposed')
     for (const item of component.exposed) {
       lines.push(`- ${item.name}: ${item.type}${item.description ? ` — ${item.description}` : ''}`)
+    }
+  }
+
+  if (component.types?.length) {
+    lines.push('', '## Types')
+    for (const item of component.types) {
+      lines.push(`- ${item.name}（${item.kind}，${item.file}）`, '```ts', item.code, '```')
     }
   }
 

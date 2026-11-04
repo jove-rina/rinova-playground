@@ -1,6 +1,6 @@
 # @rinova/playground
 
-Vue3 的「文件即场景」组件演示框架。往 `src/scenes/` 里放 `.vue` 文件，侧栏、预览、源码面板、入参/出参面板自己就长出来了 —— 没有注册 API，没有配置要改。
+Vue3 的「文件即场景」组件演示框架。往 `src/scenes/` 里放 `.vue` 文件，侧栏、预览、源码面板、输入/输出面板自己就长出来了 —— 没有注册 API，没有配置要改。
 
 ```bash
 pnpm add @rinova/playground
@@ -83,7 +83,6 @@ const size = ref<'sm' | 'md' | 'lg'>('lg')
 | `sources` | `true` | 是否显示源码面板 |
 | `codeViewer` | `'monaco'` | `'monaco'` 只读编辑器 / `'shiki'` 静态高亮块（更轻，不加载编辑器 worker） |
 | `theme.ui` | `'auto'` | `'light' \| 'dark' \| 'auto'` |
-| `theme.code` | 随明暗用 `vitesse-light` / `vitesse-dark` | **v0.1 尚未接线，改这个值暂时无效** |
 | `exclude` | — | 排除的 glob（相对 `scenes` 根） |
 | `base` | Vite 默认 | 部署子路径 |
 | `port` | Vite 默认（5173） | dev server 端口 |
@@ -107,7 +106,7 @@ const size = ref<'sm' | 'md' | 'lg'>('lg')
 
 `SceneMeta` 类型里还有 `payload` 字段，但构建期拿不到组件状态，**请改用下面的 `useSceneArgs` / `useSceneOutput`**。
 
-### useSceneArgs —— 入参面板
+### useSceneArgs —— 输入面板
 
 ```ts
 const args = useSceneArgs(
@@ -125,18 +124,18 @@ const args = useSceneArgs(
 
 > 字面量会被拓宽成 `string`，直接传给只接受联合类型的 prop 会报 TS2322，所以写 `'md' as 'sm' | 'md' | 'lg'`。
 
-### useSceneOutput —— 出参快照
+### useSceneOutput —— 输出快照
 
 ```ts
 useSceneOutput(() => ({ size: args.size, clicked: count.value }))
 ```
 
-面板以 400ms 轮询这个 getter，把返回值显示在出参区。
+面板以 400ms 轮询这个 getter，把返回值显示在输出区。
 
 ### 一个场景多个 demo —— 参数槽位
 
 同一场景里放多个 demo 时，各自调用一次并在选项里写 `slot`，面板会按槽位名分块，
-互不干扰（改一块的入参只影响那一个 demo）：
+互不干扰（改一块的输入只影响那一个 demo）：
 
 ```ts
 const primary = useSceneArgs({ label: '主按钮', size: 'md' }, { slot: '主按钮' })
@@ -174,7 +173,7 @@ toast('保存失败', 'error')     // 'info' | 'success' | 'warning' | 'error'
 
 - 场景与外壳无 DOM 隔离，必须写 scoped
 - 源码面板只读，不支持编辑（实时预览也已明确不做：只在 dev 可用，价值不足）
-- `theme.code` 未接线
+- 代码配色随外壳明暗固定使用 `light-plus` / `tokyo-night`，暂不提供配置项
 - 只支持 Vue3，不支持 React / Svelte
 
 ## 相关包

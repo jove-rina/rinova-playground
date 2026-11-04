@@ -2,10 +2,10 @@
 import { defineSceneMeta } from '@rinova/playground'
 
 export const sceneMeta = defineSceneMeta({
-  title: '入参 / 出参',
+  title: '输入 / 输出',
   order: 3,
   tags: ['表单', '实时'],
-  description: '右侧「参数」按钮打开表单，改动直接驱动这个标签。',
+  description: '预览下方的输入表单改动直接驱动这个标签，右侧是输出快照。',
 })
 </script>
 
@@ -16,7 +16,7 @@ import Prose from '../../../components/Prose.vue'
 
 const args = useSceneArgs(
   {
-    text: '入参实时生效',
+    text: '输入实时生效',
     tone: 'success' as 'neutral' | 'success' | 'danger',
     size: 'md' as 'sm' | 'md',
     rounded: true,
@@ -31,14 +31,14 @@ useSceneOutput(() => ({ text: args.text, tone: args.tone, size: args.size, round
 </script>
 
 <template>
-  <Prose title="入参 / 出参" lead="点击右上角「参数」，右侧出现表单，改了立即生效（生产环境同样可用）。">
+  <Prose title="输入 / 输出" lead="改输入表单里的值，组件立刻响应；右侧输出面板每 400ms 取一次快照（生产静态站同样可用）。">
     <div class="demo">
       <DemoBadge :text="args.text" :tone="args.tone" :size="args.size" :rounded="args.rounded" />
     </div>
 
     <h2>场景侧写法</h2>
-    <pre><code>const args = useSceneArgs(
-  { text: '入参实时生效', tone: 'success' as 'neutral' | 'success' | 'danger' },
+    <pre data-lang="ts"><code>const args = useSceneArgs(
+  { text: '输入实时生效', tone: 'success' as 'neutral' | 'success' | 'danger' },
   { options: { tone: ['neutral', 'success', 'danger'] }, labels: { text: '文案' } }
 )
 
@@ -54,7 +54,7 @@ useSceneOutput(() => ({ tone: args.tone }))</code></pre>
       </tbody>
     </table>
 
-    <blockquote>入参驱动组件是纯前端响应式，静态站也能用；出参每 400ms 取一次快照。</blockquote>
+    <blockquote>输入驱动组件是纯前端响应式，静态站也能用；输出每 400ms 取一次快照。</blockquote>
   </Prose>
 </template>
 

@@ -12,7 +12,7 @@ import Prose from '../../../components/Prose.vue'
   <Prose title="API 文档表" lead="Demo 之外还要能查契约：每个 prop 是什么、事件回调拿到什么、插槽传什么。">
     <h2>怎么打开</h2>
     <p>在该组件页的 <code>meta.ts</code> 里声明 <code>component</code>，页头就会出现「场景 / API」切换：</p>
-    <pre><code>import { definePageMeta } from '@rinova/playground'
+    <pre data-lang="ts"><code>import { definePageMeta } from '@rinova/playground'
 
 export const pageMeta = definePageMeta({
   title: 'Input',
@@ -38,7 +38,7 @@ export const pageMeta = definePageMeta({
     </ul>
 
     <h2>要写 JSDoc</h2>
-    <pre><code>defineProps&lt;{
+    <pre data-lang="ts"><code>defineProps&lt;{
   /** 有值时显示清空按钮 */
   clearable?: boolean
 }&gt;()

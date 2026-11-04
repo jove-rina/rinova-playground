@@ -6,7 +6,7 @@ export const sceneMeta = defineSceneMeta({
   order: 8,
   section: 'events',
   api: ['click', 'press'],
-  description: 'click 是原生事件，press 是业务事件，带 variant 参数；点按钮看右侧出参。',
+  description: 'click 是原生事件，press 是业务事件，带 variant 参数；点按钮看右侧输出。',
 })
 </script>
 <script setup lang="ts">

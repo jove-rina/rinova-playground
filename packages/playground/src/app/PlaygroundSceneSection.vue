@@ -10,10 +10,11 @@ import { provideSceneContext } from '../payload/context'
 import { currentArgsSlots } from '../payload/args'
 import { api, pageComponents } from 'virtual:playground/api'
 import { currentOutputSlots } from '../payload/output'
+import config from 'virtual:playground/config'
 import type { Component } from 'vue'
 import type { ComponentApi, SceneDescriptor } from '../types'
 
-const props = defineProps<{ scene: SceneDescriptor; showArgs?: boolean; theme?: 'light' | 'dark' }>()
+const props = defineProps<{ scene: SceneDescriptor; theme?: 'light' | 'dark' }>()
 const emit = defineEmits<{ focus: [name: string]; inspect: [key: string] }>()
 
 /** 让场景内的 useSceneArgs / useSceneOutput 知道自己属于哪个场景 */
@@ -25,6 +26,18 @@ const mounted = ref(false)
 
 
 const fileName = computed(() => props.scene.rel.split('/').pop() ?? props.scene.rel)
+
+/**
+ * 文档场景：不套演示画布，按文档排版直接铺在页面上。
+ * 由插件在扫描时定好（Markdown 场景恒为 true，`.vue` 页看 pageMeta.doc），运行时不再猜。
+ */
+const isDoc = computed(() => props.scene.doc)
+
+/** 演示画布主题：默认浅色，'auto' 跟随外壳；组件不一定支持暗色 */
+const stageTheme = computed<'light' | 'dark'>(() => {
+  const stage = config.theme?.stage ?? 'light'
+  return stage === 'auto' ? (props.theme ?? 'light') : stage
+})
 /** 该场景演示的 API：名字 + 类型/默认值（从契约里查） */
 const contractOfPage = computed<ComponentApi | null>(() => {
   const name = pageComponents[props.scene.pageId]
@@ -56,12 +69,11 @@ const inspect = (name: string): void => {
   emit('inspect', `${SECTION_KIND[props.scene.section] ?? 'props'}:${name}`)
 }
 
-/** 本场景是否声明了入参 / 出参；决定「参数 | 出参」并排还是单栏 */
+/** 本场景是否声明了输入 / 输出；决定「输入 | 输出」并排还是单栏 */
 const ownsSlot = (sceneId: string): boolean => !sceneId || sceneId === props.scene.name
 const hasArgs = computed(() => currentArgsSlots.value.some((slot) => ownsSlot(slot.sceneId)))
 const hasOutput = computed(() => currentOutputSlots.value.some((slot) => ownsSlot(slot.sceneId)))
-const showArgsBlock = computed(() => props.showArgs !== false && hasArgs.value)
-const singleColumn = computed(() => !showArgsBlock.value || !hasOutput.value)
+const singleColumn = computed(() => !hasArgs.value || !hasOutput.value)
 
 let observer: IntersectionObserver | null = null
 
@@ -101,7 +113,7 @@ defineExpose({ mount })
 </script>
 
 <template>
-  <section :id="scene.name" ref="rootEl" class="pw-scene">
+  <section :id="scene.name" ref="rootEl" class="pw-scene" :class="{ 'is-doc': isDoc }">
     <header class="pw-scene__head">
       <h2 class="pw-scene__title">
         <a :href="`#${scene.name}`" class="pw-scene__anchor" @click.prevent="emit('focus', scene.name)">
@@ -113,19 +125,27 @@ defineExpose({ mount })
     <p v-if="scene.description" class="pw-scene__desc">{{ scene.description }}</p>
     <PwApiBrief v-if="apiItems.length" :items="apiItems" @inspect="inspect" />
 
-    <div class="pw-scene__preview">
-      <PwSceneBoundary :title="scene.title" :file="scene.rel">
-        <component :is="component" v-if="component" />
-        <div v-else class="pw-scene__skeleton" aria-hidden="true" />
-      </PwSceneBoundary>
+    <div class="pw-scene__preview" :class="{ 'is-doc': isDoc }">
+      <div v-if="isDoc" class="pw-scene__doc">
+        <PwSceneBoundary :title="scene.title" :file="scene.rel">
+          <component :is="component" v-if="component" />
+          <div v-else class="pw-scene__skeleton" aria-hidden="true" />
+        </PwSceneBoundary>
+      </div>
+      <div v-else class="pw-scene__canvas" :data-pw-stage="stageTheme">
+        <PwSceneBoundary :title="scene.title" :file="scene.rel">
+          <component :is="component" v-if="component" />
+          <div v-else class="pw-scene__skeleton" aria-hidden="true" />
+        </PwSceneBoundary>
+      </div>
     </div>
 
-    <div v-if="showArgsBlock || hasOutput" class="pw-scene__io" :class="{ 'is-single': singleColumn }">
-      <PlaygroundSceneArgs v-if="showArgsBlock" :scene-name="scene.name" />
+    <div v-if="hasArgs || hasOutput" class="pw-scene__io" :class="{ 'is-single': singleColumn }">
+      <PlaygroundSceneArgs v-if="hasArgs" :scene-name="scene.name" />
       <PlaygroundSceneOutput v-if="hasOutput" :scene-name="scene.name" />
     </div>
 
-    <PlaygroundSceneSource :scene="scene" />
+    <PlaygroundSceneSource v-if="scene.showSource" :scene="scene" />
   </section>
 </template>
 
@@ -152,6 +172,12 @@ defineExpose({ mount })
     margin: 0;
     font-size: 15px;
     font-weight: 600;
+  }
+
+  /* 文档场景没有 h1，场景标题就是这一段的标题，比正文 h2 高一级 */
+  &.is-doc &__title {
+    font-size: 18px;
+    letter-spacing: -0.01em;
   }
 
   &__anchor {
@@ -201,10 +227,24 @@ defineExpose({ mount })
   }
 
   &__preview {
-    padding: 18px;
     border: 1px solid var(--rp-color-border);
     border-radius: var(--rp-radius);
+    overflow: hidden;
+
+    /* 文档场景（.md）直接铺在页面上：它不是 demo，不该套演示画布的白卡片 */
+    &.is-doc {
+      border: 0;
+      border-radius: 0;
+      overflow: visible;
+    }
+  }
+
+  /* 画布自带 token（见 theme.less 的 [data-pw-stage]），与外壳主题解耦。
+     宽度贴合 demo 内容（max-width: 100%），避免组件只有 500px 时拉出一大片空白白卡 */
+  &__canvas {
+    padding: 18px;
     background: var(--rp-color-bg);
+    color: var(--rp-color-text);
   }
 
   &__skeleton {
@@ -233,6 +273,13 @@ defineExpose({ mount })
     @media (max-width: 900px) {
       grid-template-columns: minmax(0, 1fr);
     }
+  }
+}
+
+/* 预览宽度由容器决定（设备外壳 / 手动宽度），媒体查询看不到，所以用 container query */
+@container pw-preview (max-width: 760px) {
+  .pw-scene__io {
+    grid-template-columns: minmax(0, 1fr);
   }
 
 }

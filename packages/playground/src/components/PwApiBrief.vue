@@ -40,6 +40,7 @@ const emit = defineEmits<{ inspect: [name: string] }>()
     display: inline-flex;
     align-items: baseline;
     gap: 6px;
+    max-width: 100%;
     padding: 2px 8px;
     border: 1px solid var(--rp-color-border);
     border-radius: 999px;
@@ -65,7 +66,8 @@ const emit = defineEmits<{ inspect: [name: string] }>()
     color: var(--rp-color-text-muted);
     font-family: var(--rp-font-mono);
     font-size: 11px;
-    max-width: 260px;
+    max-width: min(260px, 100%);
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

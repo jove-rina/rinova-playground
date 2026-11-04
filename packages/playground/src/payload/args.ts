@@ -9,7 +9,7 @@ export interface SceneArgsOptions {
   /** 字段标签，缺省用 key */
   labels?: Record<string, string>
   /**
-   * 槽位名。一个场景里多次调用 `useSceneArgs` 时，每块入参各占一个槽位，
+   * 槽位名。一个场景里多次调用 `useSceneArgs` 时，每块输入各占一个槽位，
    * 面板按名字分块显示。只调用一次时可以省略。
    */
   slot?: string
@@ -31,7 +31,7 @@ export interface SceneArgsBinding {
 let seq = 0
 type Slot = SceneArgsBinding & { order: number }
 
-/** 当前场景挂载的全部入参槽位（同一时刻只有一个场景挂载） */
+/** 当前场景挂载的全部输入槽位（同一时刻只有一个场景挂载） */
 export const currentArgsSlots = shallowRef<SceneArgsBinding[]>([])
 
 /** 兼容旧接口：第一个槽位 */
@@ -43,7 +43,7 @@ const sortSlots = (list: Slot[]): SceneArgsBinding[] =>
   [...list].sort((a, b) => a.order - b.order)
 
 /**
- * 在场景的 `<script setup>` 里声明可变入参，返回响应式对象：
+ * 在场景的 `<script setup>` 里声明可变输入，返回响应式对象：
  * 面板改表单 → 这里同步变化 → 组件跟着重渲染。纯浏览器能力，生产环境同样可用。
  *
  * 一个场景里有多个 demo 时，各自调用一次并传 `slot` 区分：
