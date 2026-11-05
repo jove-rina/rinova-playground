@@ -28,7 +28,7 @@ for (const file of files) {
       json[field][name] = `^${target}`
     }
   }
-  if (json.version) json.version = target
+  if (json.version && json.name !== '{{projectName}}') json.version = target
   fs.writeFileSync(file, `${JSON.stringify(json, null, 2)}\n`)
   console.log(`${file}  version ${before} → ${json.version ?? '(无 version)'}${ranges.length ? `  ranges ${ranges.join(', ')}` : ''}`)
 }

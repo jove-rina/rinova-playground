@@ -5,6 +5,7 @@ import path from 'node:path'
 
 const packages = ['playground', 'playground-vite', 'playground-mcp', 'create-playground']
 let failed = 0
+let expectedVersion = ''
 
 for (const name of packages) {
   const dir = path.resolve('packages', name)
@@ -27,7 +28,8 @@ for (const name of packages) {
     if (!value) continue
     if (!files.includes(String(value).replace(/^\.\//, ''))) missing.push(`${field}→${value}`)
   }
-  if (pkg.version !== '0.5.0') missing.push(`version=${pkg.version}`)
+  if (!expectedVersion) expectedVersion = pkg.version
+  if (pkg.version !== expectedVersion) missing.push(`version=${pkg.version}（应与 ${expectedVersion} 一致）`)
 
   const kb = (n) => `${(n / 1024).toFixed(1)}KB`
   console.log(

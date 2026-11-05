@@ -75,8 +75,16 @@ const run = async (): Promise<void> => {
   const tools = await request('tools/list', {})
   const names = ((tools.tools ?? []) as { name: string }[]).map((tool) => tool.name)
   check(
-    'tools/list 暴露四个工具',
-    ['capability_search', 'capability_get', 'scenario_list', 'coverage_report'].every((name) => names.includes(name)),
+    'tools/list 暴露七个工具',
+    [
+      'capability_search',
+      'capability_get',
+      'scenario_list',
+      'coverage_report',
+      'env_get',
+      'scene_scaffold',
+      'scene_validate',
+    ].every((name) => names.includes(name)),
     names.join(', ')
   )
 
@@ -112,6 +120,46 @@ const run = async (): Promise<void> => {
 
   const missing = await call('capability_get', { component: 'NotExist' })
   check('未知组件返回 isError', missing.isError, missing.text.split('\n')[0] ?? '')
+
+  const env = await call('env_get', {})
+  check(
+    'env_get 输出 globals 与分组',
+    env.text.includes('apiBase') && env.text.includes('## 分组') && /## 页面（\d+）/.test(env.text),
+    env.text.split('\n').slice(0, 2).join(' ') || ''
+  )
+
+  const scaffold = await call('scene_scaffold', {
+    title: '尺寸',
+    page: 'button/button',
+    component: 'MyButton',
+    slug: 'probe-size',
+    section: 'props',
+    api: ['size'],
+  })
+  check(
+    'scene_scaffold 给出路径与骨架',
+    scaffold.text.includes('src/scenes/button/button/probe-size.vue') &&
+      scaffold.text.includes('<style scoped lang="less">') &&
+      scaffold.text.includes("api: ['size']"),
+    scaffold.text.split('\n')[2] ?? ''
+  )
+
+  const nobody = await call('scene_scaffold', { title: '无组件场景', group: 'nope', slug: 'x' })
+  check('scene_scaffold 拒绝未登记分组', nobody.isError, nobody.text.split('\n')[0] ?? '')
+
+  const validate = await call('scene_validate', {})
+  check(
+    'scene_validate 全量校验通过',
+    !validate.isError && /校验通过（\d+ 个场景）/.test(validate.text),
+    validate.text.split('\n')[0] ?? ''
+  )
+
+  const badPath = 'src/scenes/__probe__/bad.vue'
+  check(
+    'scene_validate 拒绝清单外的越界路径',
+    (await call('scene_validate', { path: badPath })).isError,
+    badPath
+  )
 
   child.kill()
 

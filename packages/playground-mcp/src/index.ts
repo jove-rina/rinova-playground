@@ -4,6 +4,8 @@ import path from 'node:path'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
+import { scaffoldScene, validateScenes } from './validate.js'
+import type { ValidateManifest } from './validate.js'
 
 interface ManifestField {
   name: string
@@ -41,10 +43,51 @@ interface ManifestScene {
   sources: string[]
 }
 
-interface Manifest {
+interface ManifestPage {
+  id: string
+  group: string
+  groupDir: string
+  title: string
+  order: number
+  depth: 1 | 2
+  parentId?: string
+  component?: string
+  module?: string
+  doc?: boolean
+  showSource?: boolean
+  dir: string
+  scenes: string[]
+}
+
+interface ManifestEnv {
+  title: string
+  sceneRoot: string
+  routeBase: string
+  groups: Array<{ dir: string; label: string }>
+  globals: Record<string, unknown>
+  plugins: string[]
+  theme: { ui: string; stage: string }
+  sources: boolean
+  components: { configured: boolean; count: number }
+  modules: { configured: boolean; count: number }
+  pages: ManifestPage[]
+}
+
+interface Manifest extends ValidateManifest {
   generatedAt: string
   components: ManifestComponent[]
   scenes: ManifestScene[]
+  modules: Array<{
+    name: string
+    rel: string
+    functions: { name: string; kind: string; signature: string; description: string }[]
+    constants: { name: string; type: string; value: string; description: string }[]
+    types: { name: string; kind: string; file: string }[]
+    scenes: string[]
+    uncovered: string[]
+  }>
+  /** 演示环境（globals / 插件 / 分组 / 页面清单）；0.5 及更早的清单没有这一段 */
+  env?: ManifestEnv
 }
 
 const toPosix = (value: string): string => value.split(path.sep).join('/')
@@ -177,7 +220,7 @@ const main = async (): Promise<void> => {
     return
   }
 
-  const server = new McpServer({ name: 'rinova-playground', version: '0.5.0' })
+  const server = new McpServer({ name: 'rinova-playground', version: '0.7.0' })
 
   server.registerTool(
     'capability_search',
@@ -265,6 +308,237 @@ const main = async (): Promise<void> => {
       const uncovered = rows.length
       const head = `覆盖 ${total - uncovered}/${total}｜清单生成时间 ${manifest.generatedAt}`
       return { content: [{ type: 'text', text: rows.length ? `${head}\n\n${rows.join('\n')}` : `${head}\n\n全部 props 都有场景覆盖。` }] }
+    }
+  )
+
+  const kebab = (input: string): string => {
+    const ascii = input
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+    return ascii || ''
+  }
+
+  const formatEnv = (manifest: Manifest): string => {
+    const env = manifest.env
+    if (!env) {
+      return '这份清单里没有 env 段（0.5 及更早的清单没有）。重新跑一次 pnpm dev 生成：清单由 @rinova/playground-vite 在扫描场景时写入。'
+    }
+    const lines: string[] = [
+      `# 演示环境：${env.title}`,
+      '',
+      `- 场景目录：${env.sceneRoot}（严格三层：<分组>/<页面>/<场景>；子组件页可四层）`,
+      `- 路由：history 路由 ${env.routeBase} + <分组>/<页面>，页内锚点 #<场景名>`,
+      `- 外壳能力：明暗切换、预览宽度（自适应 / 手机 390 / 平板 820 / 桌面 1280）、源码卡片内搜索、页内索引`,
+      `- 契约：组件 ${env.components.count} 个${env.components.configured ? '' : '（未配置 components）'}、模块 ${
+        env.modules.count
+      } 个${env.modules.configured ? '' : '（未配置 modules）'}、插件 ${env.plugins.length} 个`,
+      `- 主题：外壳 ${env.theme.ui}、演示画布 ${env.theme.stage}；颜色只用 var(--rp-color-*)`,
+      '',
+      '## 分组',
+      '',
+    ]
+    if (!env.groups.length) lines.push('（没有分组：playground.config.ts 里配置 groups）')
+    for (const group of env.groups) lines.push(`- ${group.dir} = ${group.label}`)
+
+    lines.push('', '## globals（场景里 usePlaygroundEnv() 读取）', '')
+    lines.push(
+      Object.keys(env.globals).length ? '```json\n' + JSON.stringify(env.globals, null, 2) + '\n```' : '（没有配置 globals）'
+    )
+
+    lines.push('', '## 插件', '')
+    if (!env.plugins.length) {
+      lines.push('（没有配置插件；场景里不能假设存在登录态 / 环境变量）')
+    } else {
+      for (const plugin of env.plugins) lines.push(`- ${plugin}`)
+      lines.push('', '场景里这样取：')
+      lines.push('```ts')
+      lines.push("const env = usePlaygroundEnv<{ apiBase: string }>()  // globals + 插件返回值合并")
+      lines.push("const auth = usePlaygroundPlugin<{ user: { name: string } }>('auth')  // name 是插件注册的名字")
+      lines.push('```')
+    }
+
+    lines.push('', `## 页面（${env.pages.length}）`, '', '| 页面 | id | 绑定 | 场景 |', '|---|---|---|---|')
+    for (const page of env.pages) {
+      const binding = page.component ? `组件 ${page.component}` : page.module ? `模块 ${page.module}` : '内容页'
+      lines.push(`| ${page.title} | ${page.id} | ${binding} | ${page.scenes.length} 个 |`)
+    }
+    return lines.join('\n')
+  }
+
+  server.registerTool(
+    'env_get',
+    {
+      title: '演示环境',
+      description: '返回 globals / 插件 / 分组 / 页面清单与外壳能力，写场景前先读它',
+      inputSchema: {},
+    },
+    () => ({ content: [{ type: 'text', text: formatEnv(manifest) }] })
+  )
+
+  server.registerTool(
+    'scene_scaffold',
+    {
+      title: '生成场景骨架',
+      description: '按环境规则算出该建的文件路径与内容（不落盘，写入交给客户端的文件工具）',
+      inputSchema: {
+        title: z.string().min(1).describe('场景标题，如「基础用法」'),
+        page: z.string().optional().describe('已有页面 id（如 button/button）；新建页时传页目录名'),
+        group: z.string().optional().describe('分组目录名，如 button；page 已存在时可省略'),
+        component: z.string().optional().describe('这一页演示的组件名，如 MyButton'),
+        lang: z.enum(['vue', 'md']).optional().describe('场景类型，默认 vue'),
+        section: z.enum(['overview', 'props', 'events', 'exposes', 'slots']).optional(),
+        api: z.array(z.string()).optional().describe('这个场景演示的 API 名'),
+        slug: z.string().optional().describe('场景文件名（不含扩展名）；中文标题请显式传，默认取标题的英文缩写'),
+      },
+    },
+    ({ title, page, group, component, lang, section, api, slug }) => {
+      const env = manifest.env
+      if (!env) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: '这份清单里没有 env 段，无法推算目录。先跑一次 pnpm dev 重新生成清单。',
+            },
+          ],
+          isError: true,
+        }
+      }
+
+      const matchesPage = page
+        ? env.pages.filter(
+            (item) =>
+              item.id === page ||
+              (group ? item.id === `${group}/${page}` : false) ||
+              item.dir.split('/').pop() === page ||
+              item.title === page
+          )
+        : []
+      if (matchesPage.length > 1) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `"${page}" 命中多个页面：${matchesPage.map((item) => item.id).join(', ')}。请传完整 id。`,
+            },
+          ],
+          isError: true,
+        }
+      }
+      const target = matchesPage[0]
+      const groupDir = target?.groupDir ?? group
+      if (!groupDir) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `需要知道放在哪个分组。已有分组：${env.groups.map((item) => item.dir).join(', ') || '（无）'}\n` +
+                `已有页面：${env.pages.map((item) => item.id).join(', ') || '（无）'}`,
+            },
+          ],
+          isError: true,
+        }
+      }
+      if (!env.groups.some((item) => item.dir === groupDir)) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `分组 "${groupDir}" 不在 playground.config.ts 的 groups 里（现有：${env.groups
+                .map((item) => item.dir)
+                .join(', ')}）。要么先登记分组，要么换一个。`,
+            },
+          ],
+          isError: true,
+        }
+      }
+
+      const pageDir = target ? (target.dir.split('/').pop() ?? target.id) : kebab(page ?? component ?? groupDir) || groupDir
+      const chosenSlug = slug ?? kebab(title) ?? ''
+      if (!chosenSlug) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `标题「${title}」不是英文，算不出文件名。请再传一个 slug（如 basic / size）。`,
+            },
+          ],
+          isError: true,
+        }
+      }
+
+      const componentName = component ?? target?.component
+      const componentRel = componentName
+        ? manifest.components.find((item) => item.name === componentName)?.rel
+        : undefined
+      if (componentName && !componentRel) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `组件 "${componentName}" 不在组件契约里（可用：${manifest.components.map((item) => item.name).join(', ') || '无'}）。`,
+            },
+          ],
+          isError: true,
+        }
+      }
+
+      const scaffold = scaffoldScene({
+        sceneRoot: env.sceneRoot,
+        groupDir,
+        pageDir,
+        slug: chosenSlug,
+        title,
+        lang: lang ?? 'vue',
+        component: componentName,
+        componentRel,
+        section,
+        api,
+      })
+
+      const lines = [`# 要写入的文件`, '']
+      lines.push('## ' + scaffold.sceneFile, '', '```' + (lang ?? 'vue'), scaffold.sceneContent.trimEnd(), '```', '')
+      if (fs.existsSync(path.join(project, scaffold.pageMetaFile))) {
+        lines.push(`页面目录已存在（${scaffold.pageMetaFile}），只写场景文件即可。`, '')
+      } else {
+        lines.push('## ' + scaffold.pageMetaFile + '（新页面，需要建）', '', '```ts', scaffold.pageMetaContent.trimEnd(), '```', '')
+      }
+      lines.push(`写完之后调 scene_validate（path=${scaffold.sceneFile}）校验；dev server 会自己热更新。`)
+
+      return { content: [{ type: 'text', text: lines.join('\n') }] }
+    }
+  )
+
+  server.registerTool(
+    'scene_validate',
+    {
+      title: '校验场景',
+      description: '按框架的硬约束检查场景文件：目录层级、样式 scoped、禁用全局选择器、sceneMeta 字段、页绑定',
+      inputSchema: {
+        path: z.string().optional().describe('只校验这个文件（相对项目根）；不传则全量校验'),
+      },
+    },
+    ({ path: target }) => {
+      if (!manifest.env) {
+        return {
+          content: [{ type: 'text', text: '这份清单里没有 env 段，无法校验。先跑一次 pnpm dev 重新生成清单。' }],
+          isError: true,
+        }
+      }
+      const issues = validateScenes(project, manifest, target)
+      const errors = issues.filter((item) => item.level === 'error')
+      const warns = issues.filter((item) => item.level === 'warn')
+      const scope = target ? `文件 ${target}` : `${manifest.scenes.length} 个场景`
+      if (!issues.length) {
+        return { content: [{ type: 'text', text: `校验通过（${scope}）。` }] }
+      }
+      const lines = [`${scope}：${errors.length} 个错误 / ${warns.length} 个提醒`, '']
+      for (const issue of [...errors, ...warns]) {
+        lines.push(`- [${issue.level === 'error' ? '错误' : '提醒'}] ${issue.file}${issue.line ? `:${issue.line}` : ''} · ${issue.rule}`)
+        lines.push(`  ${issue.message}`)
+      }
+      return { content: [{ type: 'text', text: lines.join('\n') }], isError: errors.length > 0 }
     }
   )
 

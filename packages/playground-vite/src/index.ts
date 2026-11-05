@@ -3,6 +3,7 @@ import path from 'node:path'
 import { createJiti } from 'jiti'
 import { parse as parseSfc } from '@vue/compiler-sfc'
 import { buildManifest, writeManifest } from './manifest.js'
+import type { ManifestEnv, ManifestPage } from './manifest.js'
 import { buildModules } from './module-api.js'
 import { resolvePluginSpecifier } from './plugin-spec.js'
 import type { Plugin, ViteDevServer } from 'vite'
@@ -516,13 +517,64 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
       const modules = modulePatterns.length
         ? buildModules({ root, patterns: modulePatterns, tsconfig, scenes })
         : []
+
+      /** 演示环境：globals / 插件 / 分组 / 页面清单（MCP 与 llms.txt 的数据源） */
+      const buildEnv = (): ManifestEnv => {
+        const scenesOfPage = new Map<string, string[]>()
+        for (const scene of scenes) {
+          const list = scenesOfPage.get(scene.pageId) ?? []
+          list.push(scene.id)
+          scenesOfPage.set(scene.pageId, list)
+        }
+        const envPages: ManifestPage[] = pages.map((page) => ({
+          id: page.id,
+          group: page.group,
+          groupDir: page.groupDir,
+          title: page.title,
+          order: page.order,
+          depth: page.depth,
+          ...(page.parentId ? { parentId: page.parentId } : {}),
+          ...(page.component ? { component: page.component } : {}),
+          ...(page.module ? { module: page.module } : {}),
+          ...(page.doc ? { doc: true } : {}),
+          ...(page.showSource !== undefined ? { showSource: page.showSource } : {}),
+          dir: `${toPosix(path.relative(root, scenesDir))}/${page.id}`,
+          scenes: scenesOfPage.get(page.id) ?? [],
+        }))
+        const groupLabels = new Map<string, string>()
+        for (const page of pages) groupLabels.set(page.groupDir, page.group)
+        const theme = (config.theme ?? {}) as { ui?: string; stage?: string }
+        const plugins = Array.isArray(config.plugins)
+          ? config.plugins.filter((item): item is string => typeof item === 'string')
+          : []
+        const routeBase =
+          typeof config.routeBase === 'string' ? config.routeBase : typeof config.base === 'string' ? config.base : '/'
+        return {
+          title: typeof config.title === 'string' ? config.title : 'rinova-playground',
+          sceneRoot: toPosix(path.relative(root, scenesDir)),
+          routeBase,
+          groups: [...groupLabels].map(([dir, label]) => ({ dir, label })),
+          globals: (config.globals ?? {}) as Record<string, unknown>,
+          plugins,
+          theme: { ui: theme.ui ?? 'auto', stage: theme.stage ?? 'light' },
+          sources: config.sources !== false,
+          components: { configured: patterns.length > 0, count: 0 },
+          modules: { configured: modulePatterns.length > 0, count: 0 },
+          pages: envPages,
+        }
+      }
+
       const manifest = buildManifest({
         root,
         patterns,
         tsconfig,
         scenes,
         modules,
+        env: buildEnv(),
       })
+      // 数量以实际提取结果为准（glob 命中了多少组件 / 模块）
+      manifest.env.components.count = manifest.components.length
+      manifest.env.modules.count = manifest.modules.length
       writeManifest(path.join(root, '.playground'), manifest)
       // 契约变了要让 API 模块失效：下次请求重新注入
       const apiMod = devServer?.moduleGraph.getModuleById(RESOLVED_ID[VIRTUAL_API] as string)
@@ -813,9 +865,11 @@ ${pageCode}
 
       const refresh = (file?: string): void => {
         const target = file ?? ''
-        const isScene = target.startsWith(scenesDir) && /\.(vue|ts)$/.test(target)
+        const isScene = target.startsWith(scenesDir) && /\.(vue|ts|md)$/.test(target)
         if (!isScene) return
         invalidateScenes(server)
+        // 场景增删改都会影响 env.pages / scenes 清单（MCP 与 llms.txt 读它），防抖后重算
+        scheduleManifest(400)
         server.ws.send({ type: 'full-reload' })
       }
 
@@ -823,7 +877,10 @@ ${pageCode}
       let manifestTimer: NodeJS.Timeout | null = null
       const scheduleManifest = (delay = 800): void => {
         if (manifestTimer) clearTimeout(manifestTimer)
-        manifestTimer = setTimeout(() => generateManifest(), delay)
+        manifestTimer = setTimeout(() => {
+          // 场景新增 / 删除会 invalidate 扫描结果，清单要用新的 scenes / pages 重算
+          void ensureReady().then(() => generateManifest())
+        }, delay)
       }
 
       // components 变了要重挂监听：配置里新增的目录原来根本没被 watch。

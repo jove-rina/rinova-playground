@@ -110,12 +110,54 @@ export interface ManifestScene {
   sources: string[]
 }
 
+/** 页级信息（供 MCP / llms.txt 描述「这个演示站有什么」） */
+export interface ManifestPage {
+  /** `groupDir/pageDir`，二级页是 `groupDir/pageDir/subDir` */
+  id: string
+  group: string
+  groupDir: string
+  title: string
+  order: number
+  depth: 1 | 2
+  parentId?: string
+  component?: string
+  module?: string
+  doc?: boolean
+  showSource?: boolean
+  /** 页面目录（相对项目根），场景文件就放这里 */
+  dir: string
+  scenes: string[]
+}
+
+/**
+ * 演示环境（MCP / llms.txt 的数据源）。
+ *
+ * 只放**可序列化**的东西：`globals` 本来就是纯常量，`plugins` 是模块路径（执行结果在运行时才有）。
+ */
+export interface ManifestEnv {
+  title: string
+  /** 场景根目录（相对项目根），如 `src/scenes` */
+  sceneRoot: string
+  /** 路由前缀，默认 `/` */
+  routeBase: string
+  groups: Array<{ dir: string; label: string }>
+  globals: Record<string, unknown>
+  plugins: string[]
+  theme: { ui: string; stage: string }
+  sources: boolean
+  components: { configured: boolean; count: number }
+  modules: { configured: boolean; count: number }
+  pages: ManifestPage[]
+}
+
 export interface Manifest {
   generatedAt: string
   components: ManifestComponent[]
   scenes: ManifestScene[]
   /** 非组件文件（函数 / hooks / 常量）的契约；配了 config.modules 才有 */
   modules: ModuleApi[]
+  /** 演示环境：globals / 插件 / 分组 / 页面清单（0.7 起） */
+  env: ManifestEnv
 }
 
 export interface ManifestInput {
@@ -126,6 +168,8 @@ export interface ManifestInput {
   tsconfig: string
   /** 已经抽好的非组件模块契约 */
   modules?: ModuleApi[]
+  /** 演示环境（globals / 插件 / 分组 / 页面清单） */
+  env: ManifestEnv
   scenes: Array<{
     id: string
     title: string
@@ -510,6 +554,7 @@ export const buildManifest = (input: ManifestInput): Manifest => {
     generatedAt: new Date().toISOString(),
     components,
     modules: input.modules ?? [],
+    env: input.env,
     scenes: input.scenes.map((scene) => ({
       id: scene.id,
       title: scene.title,
@@ -521,60 +566,281 @@ export const buildManifest = (input: ManifestInput): Manifest => {
   }
 }
 
-export const renderLlmsTxt = (manifest: Manifest): string => {
-  const lines: string[] = ['# 组件能力清单（rinova-playground 生成）', '']
-  for (const component of manifest.components) {
-    lines.push(`## ${component.name} (${component.rel})`, '')
-    if (!component.props.length) lines.push('- 无对外 props')
-    for (const prop of component.props) {
-      const flags = [prop.required ? 'required' : '', prop.default ? `default=${prop.default}` : '']
+const renderComponentBlock = (component: ManifestComponent): string[] => {
+  const lines: string[] = [`## ${component.name} (${component.rel})`, '']
+  if (!component.props.length) lines.push('- 无对外 props')
+  for (const prop of component.props) {
+    const flags = [prop.required ? 'required' : '', prop.default ? `default=${prop.default}` : '']
+      .filter(Boolean)
+      .join(', ')
+    lines.push(`- prop ${prop.name}: ${prop.type}${flags ? ` (${flags})` : ''}`)
+    if (prop.description) lines.push(`  ${prop.description}`)
+  }
+  if (component.events.length) {
+    lines.push(`- events: ${component.events.map((event) => `${event.name}${event.type}`).join(', ')}`)
+  }
+  if (component.slots.length) {
+    lines.push(`- slots: ${component.slots.map((slot) => `${slot.name}${slot.type ? ` ${slot.type}` : ''}`).join(', ')}`)
+  }
+  if (component.exposed.length) {
+    lines.push(`- exposed: ${component.exposed.map((item) => `${item.name}${item.type ? `: ${item.type}` : ''}`).join(', ')}`)
+  }
+  if (component.types?.length) {
+    lines.push(`- 类型定义: ${component.types.map((item) => `${item.name} (${item.file})`).join(', ')}`)
+  }
+  if (component.scenes.length) lines.push(`- 相关场景: ${component.scenes.join(', ')}`)
+  if (component.uncoveredProps.length) lines.push(`- 未覆盖 props: ${component.uncoveredProps.join(', ')}`)
+  if (component.undocumented.length) lines.push(`- 缺说明: ${component.undocumented.join(', ')}`)
+  lines.push('')
+  return lines
+}
+
+const renderModuleBlock = (module: ModuleApi): string[] => {
+  const lines: string[] = [`## ${module.name} (${module.rel})`, '']
+  for (const fn of module.functions) {
+    lines.push(`- ${fn.kind} ${fn.signature}`)
+    if (fn.description) lines.push(`  ${fn.description}`)
+    for (const param of fn.params) {
+      const flags = [param.optional ? '可选' : '', param.default ? `默认 ${param.default}` : '']
         .filter(Boolean)
         .join(', ')
-      lines.push(`- prop ${prop.name}: ${prop.type}${flags ? ` (${flags})` : ''}`)
-      if (prop.description) lines.push(`  ${prop.description}`)
+      lines.push(
+        `  - 参数 ${param.name}: ${param.type}${flags ? ` (${flags})` : ''}${param.description ? ` — ${param.description}` : ''}`
+      )
     }
-    if (component.events.length) {
-      lines.push(`- events: ${component.events.map((event) => `${event.name}${event.type}`).join(', ')}`)
-    }
-    if (component.slots.length) {
-      lines.push(`- slots: ${component.slots.map((slot) => `${slot.name}${slot.type ? ` ${slot.type}` : ''}`).join(', ')}`)
-    }
-    if (component.exposed.length) {
-      lines.push(`- exposed: ${component.exposed.map((item) => `${item.name}${item.type ? `: ${item.type}` : ''}`).join(', ')}`)
-    }
-    if (component.types?.length) {
-      lines.push(`- 类型定义: ${component.types.map((item) => `${item.name} (${item.file})`).join(', ')}`)
-    }
-    if (component.scenes.length) lines.push(`- 相关场景: ${component.scenes.join(', ')}`)
-    if (component.uncoveredProps.length)
-      lines.push(`- 未覆盖 props: ${component.uncoveredProps.join(', ')}`)
-    if (component.undocumented.length)
-      lines.push(`- 缺说明: ${component.undocumented.join(', ')}`)
-    lines.push('')
+    if (fn.returns) lines.push(`  返回: ${fn.returns}`)
+  }
+  for (const constant of module.constants) {
+    lines.push(`- const ${constant.name}: ${constant.type}${constant.value ? ` = ${constant.value}` : ''}`)
+    if (constant.description) lines.push(`  ${constant.description}`)
+  }
+  if (module.types.length) lines.push(`- 类型定义: ${module.types.map((item) => `${item.name} (${item.file})`).join(', ')}`)
+  if (module.scenes.length) lines.push(`- 相关场景: ${module.scenes.join(', ')}`)
+  if (module.uncovered.length) lines.push(`- 未覆盖: ${module.uncovered.join(', ')}`)
+  lines.push('')
+  return lines
+}
+
+/** 环境段：AI 要先知道「这是什么站、能用什么」 */
+const renderEnvSection = (env: ManifestEnv | undefined, manifest: Manifest): string[] => {
+  const lines: string[] = ['## 1. 环境', '']
+  const groups = env?.groups ?? []
+  const pages = env?.pages ?? []
+  const globals = env?.globals ?? {}
+  const plugins = env?.plugins ?? []
+  const sceneRoot = env?.sceneRoot ?? 'src/scenes'
+  const routeBase = env?.routeBase ?? '/'
+  const theme = env?.theme ?? { ui: 'auto', stage: 'light' }
+
+  lines.push('| 项 | 值 |', '|---|---|')
+  lines.push(`| 项目标题 | ${env?.title || 'rinova-playground'} |`)
+  lines.push(`| 场景目录 | \`${sceneRoot}\`（严格三层：\`<分组>/<页面>/<场景>\`，子组件页可四层） |`)
+  lines.push(`| 路由 | history 路由：\`${routeBase}\` + \`<分组>/<页面>\`，页内锚点 \`#<场景名>\` |`)
+  lines.push(
+    `| 分组 | ${groups.length ? groups.map((group) => `\`${group.dir}\` = ${group.label}`).join('；') : '未配置 groups'} |`
+  )
+  lines.push(`| 页面 / 场景 | ${pages.length} 个页面 / ${manifest.scenes.length} 个场景 |`)
+  lines.push('| 外壳能力 | 明暗切换、预览宽度（自适应 / 手机 390 / 平板 820 / 桌面 1280）、源码卡片内搜索、页内索引 |')
+  lines.push(
+    `| 契约 | 组件 ${env?.components.count ?? manifest.components.length} 个${
+      env?.components.configured === false ? '（未配置 components）' : ''
+    }；模块 ${env?.modules.count ?? manifest.modules.length} 个${
+      env?.modules.configured === false ? '（未配置 modules）' : ''
+    }；插件 ${plugins.length} 个 |`
+  )
+  lines.push(`| 主题 | 外壳 ${theme.ui}、演示画布 ${theme.stage}；所有颜色走 \`var(--rp-color-*)\` |`)
+  lines.push('')
+
+  lines.push('### globals（场景里 `usePlaygroundEnv()` 读取）', '')
+  if (Object.keys(globals).length) {
+    lines.push('```json', JSON.stringify(globals, null, 2), '```', '')
+  } else {
+    lines.push('没有配置 `globals`。', '')
   }
 
-  for (const module of manifest.modules ?? []) {
-    lines.push(`## ${module.name} (${module.rel})`, '')
-    for (const fn of module.functions) {
-      lines.push(`- ${fn.kind} ${fn.signature}`)
-      if (fn.description) lines.push(`  ${fn.description}`)
-      for (const param of fn.params) {
-        const flags = [param.optional ? '可选' : '', param.default ? `默认 ${param.default}` : '']
-          .filter(Boolean)
-          .join(', ')
-        lines.push(
-          `  - 参数 ${param.name}: ${param.type}${flags ? ` (${flags})` : ''}${param.description ? ` — ${param.description}` : ''}`
-        )
-      }
-      if (fn.returns) lines.push(`  返回: ${fn.returns}`)
-    }
-    for (const constant of module.constants) {
-      lines.push(`- const ${constant.name}: ${constant.type}${constant.value ? ` = ${constant.value}` : ''}`)
-      if (constant.description) lines.push(`  ${constant.description}`)
-    }
-    if (module.scenes.length) lines.push(`- 相关场景: ${module.scenes.join(', ')}`)
-    if (module.uncovered.length) lines.push(`- 未覆盖: ${module.uncovered.join(', ')}`)
+  lines.push('### 插件', '')
+  if (!plugins.length) {
+    lines.push('没有配置 `plugins`；场景里不能假设存在登录态 / 环境变量。', '')
+  } else {
+    for (const plugin of plugins) lines.push(`- \`${plugin}\``)
     lines.push('')
+  }
+  lines.push('```ts')
+  lines.push("import { usePlaygroundEnv, usePlaygroundPlugin } from '@rinova/playground'")
+  lines.push('')
+  lines.push('// globals 与插件返回值按声明顺序浅合并')
+  lines.push('const env = usePlaygroundEnv<{ apiBase: string }>()')
+  lines.push("// 单个插件的返回值；name 是插件在 ctx.setup 里注册的名字")
+  lines.push("const auth = usePlaygroundPlugin<{ user: { name: string } }>('auth')")
+  lines.push('```')
+  lines.push('')
+  lines.push('插件在 `PlaygroundRoot` 初始化完成后才可用；初始化失败时整页错误卡片，`optional: true` 的插件会被跳过。')
+  lines.push('')
+
+  return lines
+}
+
+/** 写作规则 + 最小骨架：AI 照这个写就能被框架认出来 */
+const renderAuthoringSection = (): string[] => [
+  '## 2. 写作规则',
+  '',
+  '1. 目录严格三层：`<场景根>/<分组目录>/<页面目录>/<场景名>.vue`；组件有子组件时允许四层 `<页面目录>/<子页目录>/`。',
+  '2. 分组目录必须先在 `playground.config.ts` 的 `groups` 里登记，否则侧栏显示英文目录名。',
+  '3. 页面信息写在 `<页面目录>/meta.ts` 的 `pageMeta`：组件页写 `component`，模块页写 `module`，都不是就是内容页（必须写 `showSource: false`）。',
+  '4. 场景信息写在 `.vue` 的**普通 `<script>`** 块（不是 `<script setup>`）里的 `sceneMeta`；`.md` 场景写在 `---` 头里。',
+  '5. 样式只能 `<style scoped lang="less">`，禁止命中 `:root` / `html` / `body`（会污染整个 playground，verify 会判 FAIL）。',
+  '6. 只写 TypeScript、只用箭头函数；场景根不用写 `w-full`，框架已经给 `.pw-stage__inner > *` 封顶。',
+  '7. 参数与输出用 `useSceneArgs(defaults, { options, labels, slot? })` / `useSceneOutput(() => ({ ... }), slot?)`；`useScenePayload` 与 sceneMeta 里的 `payload` 已删除。',
+  '8. 颜色用 `var(--rp-color-*)`，不要写死十六进制或 `rgb()`。',
+  '',
+  '### sceneMeta 字段',
+  '',
+  '| 字段 | 类型 | 说明 |',
+  '|---|---|---|',
+  '| `title` | string | 页内索引 / 侧栏里的名字 |',
+  "| `order` | number | 页内顺序 |",
+  "| `section` | 'overview' / 'props' / 'events' / 'exposes' / 'slots' | 页内索引分组 |",
+  '| `api` | string[] | 这个场景演示的 API 名，会变成标题下的标签并可跳到 API 表 |',
+  '| `tags` | string[] | 搜索关键词 |',
+  '| `description` | string | 场景说明 |',
+  '| `hideInNav` | boolean | 不进侧栏，但可直接访问 |',
+  '| `files` | string[] | 源码卡片里额外展示的文件 |',
+  '| `showSource` | boolean | 是否给源码卡片（缺省跟随页 / 全局） |',
+  '',
+  '### pageMeta 字段（`<页面>/meta.ts`）',
+  '',
+  '| 字段 | 类型 | 说明 |',
+  '|---|---|---|',
+  '| `title` | string | 页名 |',
+  '| `order` | number | 组内顺序 |',
+  '| `description` | string | 页说明 |',
+  '| `component` | string | 这一页演示的组件名（必须出现在组件契约里） |',
+  '| `module` | string | 这一页演示的模块名（`config.modules` 里的文件名） |',
+  '| `apiNotes` | Record<string, string> | 补 API 说明，键 `events:press` / `props:size` |',
+  '| `showSource` | boolean | 页级源码开关 |',
+  '| `doc` | boolean | 文档页：不套演示画布 |',
+  '',
+  '## 3. 最小骨架',
+  '',
+  '场景文件 `src/scenes/<分组>/<页面>/<场景>.vue`：',
+  '',
+  '```vue',
+  '<script setup lang="ts">',
+  "import { useSceneArgs } from '@rinova/playground'",
+  "import MyButton from '@/lib/MyButton.vue'",
+  '',
+  "const args = useSceneArgs<{ size: 'md' | 'sm' | 'lg'; disabled: boolean }>({ size: 'md', disabled: false })",
+  '</script>',
+  '',
+  '<script lang="ts">',
+  '// 普通 <script> 块里的 sceneMeta 由插件在构建期读取',
+  'export const sceneMeta = {',
+  "  title: '基础用法',",
+  "  section: 'props',",
+  "  api: ['size', 'disabled'],",
+  '}',
+  '</script>',
+  '',
+  '<template>',
+  '  <div class="demo">',
+  '    <MyButton :size="args.size" :disabled="args.disabled">按钮</MyButton>',
+  '  </div>',
+  '</template>',
+  '',
+  '<style scoped lang="less">',
+  '.demo {',
+  '  display: flex;',
+  '  gap: 8px;',
+  '}',
+  '</style>',
+  '```',
+  '',
+  '新页面还需要 `<页面>/meta.ts`：',
+  '',
+  '```ts',
+  "import { definePageMeta } from '@rinova/playground'",
+  '',
+  'export const pageMeta = definePageMeta({',
+  "  title: 'Button',",
+  '  order: 1,',
+  "  component: 'MyButton',",
+  '})',
+  '```',
+  '',
+  'Markdown 场景（`<页面>/<场景>.md`，默认不展示源码、不套画布）：',
+  '',
+  '```md',
+  '---',
+  'title: 安装',
+  'order: 1',
+  '---',
+  '',
+  '正文……支持 `::: tip / info / warn / danger` 与 `::: steps`。',
+  '```',
+  '',
+]
+
+/** 页面清单：AI 要知道「已经有什么」，才知道该往哪加 */
+const renderPageSection = (env: ManifestEnv | undefined, manifest: Manifest): string[] => {
+  const lines = ['## 4. 页面清单', '']
+  const pages = env?.pages ?? []
+  if (!pages.length) return [...lines, '（页面清单不可用：清单里没有 env 段，重新跑 pnpm dev 生成）', '']
+
+  lines.push('| 分组 | 页面 | id | 目录 | 绑定 | 场景 |', '|---|---|---|---|---|---|')
+  for (const page of pages) {
+    const binding = page.component ? `组件 ${page.component}` : page.module ? `模块 ${page.module}` : '内容页'
+    lines.push(
+      `| ${page.group} | ${page.title} | \`${page.id}\` | \`${page.dir}\` | ${binding} | ${page.scenes.length} 个 |`
+    )
+  }
+  lines.push('')
+
+  const emptyPages = pages.filter((page) => !page.scenes.length)
+  if (emptyPages.length) {
+    lines.push(`- 没有任何场景的页面：${emptyPages.map((page) => `\`${page.id}\``).join(', ')}`)
+  }
+  const emptyScenes = manifest.scenes.filter((scene) => !scene.rel)
+  if (emptyScenes.length) lines.push(`- 没有源文件的场景条目：${emptyScenes.map((scene) => scene.id).join(', ')}`)
+  lines.push('')
+  return lines
+}
+
+export const renderLlmsTxt = (manifest: Manifest): string => {
+  const lines: string[] = [
+    `# ${manifest.env?.title || 'rinova-playground'} · 演示环境说明（rinova-playground 自动生成）`,
+    '',
+    '> 由 `@rinova/playground-vite` 在 dev / build 时生成，随源码自动更新。要加一个演示，照 §3 的骨架写文件即可，不需要注册、不需要改配置。',
+    '> 查契约用 `@rinova/playground-mcp` 的 MCP 工具（`capability_search` / `capability_get` / `env_get` / `scene_scaffold` / `scene_validate` / `scenario_list` / `coverage_report`）。',
+    '',
+    ...renderEnvSection(manifest.env, manifest),
+    ...renderAuthoringSection(),
+    ...renderPageSection(manifest.env, manifest),
+    '## 5. 组件契约',
+    '',
+  ]
+
+  for (const component of manifest.components) lines.push(...renderComponentBlock(component))
+
+  lines.push('## 6. 模块契约（函数 / hooks / 常量）', '')
+  if (!manifest.modules.length) lines.push('没有配置 `config.modules`。', '')
+  for (const module of manifest.modules) lines.push(...renderModuleBlock(module))
+
+  lines.push('## 7. 待办：覆盖与说明', '')
+  const uncovered = manifest.components.flatMap((component) =>
+    component.uncoveredProps.map((prop) => `- ${component.name}.${prop}（没有场景用到）`)
+  )
+  const undocumented = manifest.components.flatMap((component) =>
+    component.undocumented.map((item) => `- ${component.name} ${item}（没有 JSDoc）`)
+  )
+  const moduleUncovered = manifest.modules.flatMap((module) =>
+    module.uncovered.map((name) => `- ${module.name}.${name}（没有场景用到）`)
+  )
+  if (!uncovered.length && !undocumented.length && !moduleUncovered.length) {
+    lines.push('全部 props / 导出都有场景，且都有 JSDoc。', '')
+  } else {
+    if (uncovered.length) lines.push('### 没有场景覆盖的 props', '', ...uncovered, '')
+    if (moduleUncovered.length) lines.push('### 没有场景覆盖的模块导出', '', ...moduleUncovered, '')
+    if (undocumented.length) lines.push('### 没有 JSDoc 的 API', '', ...undocumented, '')
   }
 
   return `${lines.join('\n').trim()}\n`

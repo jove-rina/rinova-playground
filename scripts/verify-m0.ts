@@ -7,6 +7,7 @@
  * 静态检查始终执行；运行时检查需要 dev server 已在 5273 端口运行，否则跳过。
  */
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 
 const root = process.cwd()
@@ -952,6 +953,135 @@ try {
   apiModuleDetail = 'dev server 未运行，跳过'
 }
 record('函数 API：模块契约进虚拟模块且页绑定正确', apiModuleOk, apiModuleDetail)
+
+/* ===== 0.7：AI 能力（manifest env / llms.txt 手册 / 场景校验规则） ===== */
+
+const manifestExamples = ['minimal-lib', 'real-lib']
+const envProblems: string[] = []
+const envSummary: string[] = []
+for (const name of manifestExamples) {
+  const file = path.join(root, `examples/${name}/.playground/manifest.json`)
+  if (!fs.existsSync(file)) {
+    // .playground 是构建产物，没跑过 dev / build 时不存在 —— 与其它运行时检查同样按跳过处理
+    envSummary.push(`${name}: 清单未生成，跳过`)
+    continue
+  }
+  const data = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+    components: { name: string }[]
+    env?: {
+      sceneRoot: string
+      groups: { dir: string; label: string }[]
+      globals: Record<string, unknown>
+      plugins: string[]
+      theme: { ui: string; stage: string }
+      components: { configured: boolean; count: number }
+      pages: { id: string; dir: string; scenes: string[]; component?: string; module?: string }[]
+    }
+  }
+  const env = data.env
+  if (!env) {
+    envProblems.push(`${name}: 缺 env 段`)
+    continue
+  }
+  if (!env.pages.length) envProblems.push(`${name}: env.pages 为空`)
+  if (env.components.count !== data.components.length) {
+    envProblems.push(`${name}: components.count=${env.components.count} 与组件数 ${data.components.length} 不一致`)
+  }
+  const missingDir = env.pages.filter((page) => !fs.existsSync(path.join(root, `examples/${name}`, page.dir)))
+  if (missingDir.length) envProblems.push(`${name}: page.dir 不存在 ${missingDir.map((page) => page.dir).join(', ')}`)
+  const danglingScenes = env.pages.flatMap((page) =>
+    page.scenes.filter((id) => !id.startsWith(`${page.id}/`)).map((id) => `${page.id}→${id}`)
+  )
+  if (danglingScenes.length) envProblems.push(`${name}: 页面下的场景 id 不匹配 ${danglingScenes.join(', ')}`)
+  envSummary.push(
+    `${name}: ${env.pages.length} 页 / ${env.groups.length} 组 / globals ${Object.keys(env.globals).length} 个 / 插件 ${env.plugins.length}`
+  )
+}
+record('manifest env 段（页面清单 / globals / 插件 / 分组）', envProblems.length === 0, envProblems.join('；') || envSummary.join('；'))
+
+const llmsFile = path.join(root, 'examples/minimal-lib/.playground/llms.txt')
+const llmsText = fs.existsSync(llmsFile) ? fs.readFileSync(llmsFile, 'utf8') : ''
+const llmsSections = ['## 1. 环境', '## 2. 写作规则', '## 3. 最小骨架', '## 4. 页面清单', '## 5. 组件契约', '## 6. 模块契约']
+const llmsMissing = llmsSections.filter((section) => !llmsText.includes(section))
+const llmsNeeds = ['apiBase', '<style scoped lang="less">', 'sceneMeta 字段', 'pageMeta 字段']
+const llmsMissContent = llmsNeeds.filter((item) => !llmsText.includes(item))
+record(
+  'llms.txt 是「AI 能照着写场景」的手册',
+  llmsMissing.length === 0 && llmsMissContent.length === 0,
+  llmsMissing.length || llmsMissContent.length
+    ? `缺章节：${llmsMissing.join(', ') || '无'}；缺内容：${llmsMissContent.join(', ') || '无'}`
+    : `${llmsSections.length} 个章节 / ${llmsText.split('\n').length} 行`
+)
+
+const { validateScenes } = await import('../packages/playground-mcp/src/validate.ts')
+const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rp-verify-'))
+const fixtureSceneDir = path.join(fixtureRoot, 'src/scenes/demo/page')
+fs.mkdirSync(fixtureSceneDir, { recursive: true })
+fs.writeFileSync(
+  path.join(fixtureSceneDir, 'good.vue'),
+  [
+    '<script setup lang="ts">',
+    'const text = \'ok\'',
+    '</script>',
+    '',
+    '<script lang="ts">',
+    'export const sceneMeta = { title: \'好场景\', section: \'props\', api: [\'size\'] }',
+    '</script>',
+    '',
+    '<template><div>{{ text }}</div></template>',
+    '',
+    '<style scoped lang="less">',
+    '.demo { color: var(--rp-color-text); }',
+    '</style>',
+    '',
+  ].join('\n')
+)
+fs.writeFileSync(
+  path.join(fixtureSceneDir, 'bad.vue'),
+  [
+    '<script setup lang="ts">',
+    'const state = useScenePayload({})',
+    '</script>',
+    '',
+    '<script lang="ts">',
+    'export const sceneMeta = { title: \'坏场景\', tittle: \'拼错\', payload: { a: 1 } }',
+    '</script>',
+    '',
+    '<template><div /></template>',
+    '',
+    '<style>',
+    'html { color: red; }',
+    'body { margin: 0; }',
+    '</style>',
+    '',
+  ].join('\n')
+)
+const fixtureManifest = {
+  env: {
+    sceneRoot: 'src/scenes',
+    pages: [
+      { id: 'demo/page', group: 'Demo', groupDir: 'demo', dir: 'src/scenes/demo/page', component: 'MyCard' },
+      { id: 'demo/ghost', group: 'Demo', groupDir: 'demo', dir: 'src/scenes/demo/ghost', component: 'NotExist' },
+    ],
+  },
+  components: [{ name: 'MyCard' }],
+  modules: [],
+  scenes: [
+    { id: 'demo/page/good', rel: 'src/scenes/demo/page/good.vue', lang: 'vue' as const },
+    { id: 'demo/page/bad', rel: 'src/scenes/demo/page/bad.vue', lang: 'vue' as const },
+  ],
+}
+const fixtureIssues = validateScenes(fixtureRoot, fixtureManifest)
+const rules = new Set(fixtureIssues.map((issue) => issue.rule))
+const expectedRules = ['style-scoped', 'style-global', 'deprecated-api', 'scene-meta-field', 'page-component']
+const missingRules = expectedRules.filter((rule) => !rules.has(rule))
+const goodIssues = validateScenes(fixtureRoot, fixtureManifest, 'src/scenes/demo/page/good.vue')
+record(
+  '场景校验规则（scoped / 全局选择器 / 废弃 API / meta 字段 / 页绑定）',
+  missingRules.length === 0 && goodIssues.length === 0,
+  missingRules.length ? `未触发：${missingRules.join(', ')}` : `坏场景命中 ${rules.size} 条规则 / 好场景 0 问题`
+)
+fs.rmSync(fixtureRoot, { recursive: true, force: true })
 
 /* 输出 */
 let failed = 0
