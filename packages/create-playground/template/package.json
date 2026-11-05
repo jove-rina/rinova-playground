@@ -10,11 +10,11 @@
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@rinova/playground": "^0.3.0",
+    "@rinova/playground": "^0.5.0",
     "vue": "3.5.44"
   },
   "devDependencies": {
-    "@rinova/playground-vite": "^0.3.0",
+    "@rinova/playground-vite": "^0.5.0",
     "@vitejs/plugin-vue": "6.0.10",
     "less": "4.9.1",
     "typescript": "5.9.3",

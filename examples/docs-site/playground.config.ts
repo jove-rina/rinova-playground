@@ -5,6 +5,6 @@ export default defineConfig({
   scenes: 'src/scenes',
   port: 5280,
   components: ['src/components/**/*.vue'],
-  groups: { start: '开始', concepts: '概念', guide: '指南' },
+  groups: { start: '开始', concepts: '概念', guide: '指南', reference: '参考' },
   editor: { preset: 'cursor' },
 })

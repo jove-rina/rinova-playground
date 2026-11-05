@@ -14,13 +14,17 @@ import {
   Sun,
   Tablet,
 } from '@lucide/vue'
-import { api, pageComponents } from 'virtual:playground/api'
+import { api, modules, pageComponents, pageModules } from 'virtual:playground/api'
 import type { ComponentApi } from '../types'
+import type { ModuleApi } from '../module-api'
 import PwInput from '../components/PwInput.vue'
 import PlaygroundApiTable from './PlaygroundApiTable.vue'
+import PlaygroundModuleApi from './PlaygroundModuleApi.vue'
 import PlaygroundEditorPicker from './PlaygroundEditorPicker.vue'
 import PlaygroundPageIndex from './PlaygroundPageIndex.vue'
+import PlaygroundPluginSlot from './PlaygroundPluginSlot.vue'
 import PlaygroundSceneSection from './PlaygroundSceneSection.vue'
+import { pluginHeaderSlots } from '../plugin'
 import type { PageDescriptor, SceneDescriptor } from '../types'
 import { CUSTOM_WIDTH, clampWidth, resolveViewport, VIEWPORT_PRESETS, type ViewportState } from './viewport'
 
@@ -68,6 +72,12 @@ const contract = computed<ComponentApi | null>(() => {
   return name ? (api[name] ?? null) : null
 })
 
+/** 非组件模块（函数 / hooks / 常量）的契约 */
+const moduleContract = computed<ModuleApi | null>(() => {
+  const name = props.page.module ?? pageModules[props.page.id]
+  return name ? (modules[name] ?? null) : null
+})
+
 /** 场景里的 API 标签被点击：切到 API 视图并定位到那一行 */
 const openApi = (key: string): void => {
   focusApi.value = ''
@@ -95,8 +105,8 @@ const icons = { auto: Maximize, mobile: Smartphone, tablet: Tablet, desktop: Mon
 const presets = VIEWPORT_PRESETS.map((preset) => ({ ...preset, icon: icons[preset.id] }))
 
 const current = computed(() => resolveViewport(props.viewport))
-/** 只有固定宽度才套设备外壳；自适应就是铺满 */
-const shell = computed(() => (current.value.px ? current.value.shell : 'none'))
+/** 只有固定宽度才套设备外壳；自适应就是铺满。API 视图是表格，尺寸能力整体不适用 */
+const shell = computed(() => (view.value === 'api' ? 'none' : current.value.px ? current.value.shell : 'none'))
 
 const deviceEl = ref<HTMLElement | null>(null)
 /** 设备实际渲染宽度：目标宽度可能被可用空间夹住，caption 要显示真实值 */
@@ -207,49 +217,31 @@ onMounted(() => {
 <template>
   <div class="pw-page">
     <header class="pw-page__head">
-      <button
-        type="button"
-        class="pw-head-btn"
-        :data-tip="sidebarOpen ? '收起侧栏' : '展开侧栏'"
-        :aria-label="sidebarOpen ? '收起侧栏' : '展开侧栏'"
-        @click="emit('toggle-sidebar')"
-      >
-        <PanelLeftClose v-if="sidebarOpen" :size="14" />
-        <PanelLeftOpen v-else :size="14" />
-      </button>
+      <div class="pw-page__lead">
+        <button
+          type="button"
+          class="pw-head-btn"
+          :data-tip="sidebarOpen ? '收起侧栏' : '展开侧栏'"
+          :aria-label="sidebarOpen ? '收起侧栏' : '展开侧栏'"
+          @click="emit('toggle-sidebar')"
+        >
+          <PanelLeftClose v-if="sidebarOpen" :size="14" />
+          <PanelLeftOpen v-else :size="14" />
+        </button>
 
-      <!-- 面包屑：分组 › 页面，再单独隔一个竖线放场景数，读起来是「谁在谁下面」而不是一串词 -->
-      <nav class="pw-page__crumb" :title="`${page.group} › ${page.title}`" aria-label="当前页面位置">
-        <template v-if="page.group !== page.title">
-          <span class="pw-page__group">{{ page.group }}</span>
-          <ChevronRight :size="12" :stroke-width="2" class="pw-page__sep" aria-hidden="true" />
-        </template>
-        <span class="pw-page__name">{{ page.title }}</span>
-        <span class="pw-page__count">{{ visibleCount }} 个场景</span>
-      </nav>
+        <!-- 面包屑：分组 › 页面，再单独隔一个竖线放场景数，读起来是「谁在谁下面」而不是一串词 -->
+        <nav class="pw-page__crumb" :title="`${page.group} › ${page.title}`" aria-label="当前页面位置">
+          <template v-if="page.group !== page.title">
+            <span class="pw-page__group">{{ page.group }}</span>
+            <ChevronRight :size="12" :stroke-width="2" class="pw-page__sep" aria-hidden="true" />
+          </template>
+          <span class="pw-page__name">{{ page.title }}</span>
+          <span class="pw-page__count">{{ visibleCount }} 个场景</span>
+        </nav>
+      </div>
 
-      <div class="pw-page__actions">
-        <div class="pw-view" role="tablist" aria-label="视图">
-          <button
-            type="button"
-            class="pw-view__btn"
-            :class="{ 'is-active': view === 'scenes' }"
-            @click="view = 'scenes'"
-          >
-            场景
-          </button>
-          <button
-            v-if="contract"
-            type="button"
-            class="pw-view__btn"
-            :class="{ 'is-active': view === 'api' }"
-            @click="view = 'api'"
-          >
-            API
-          </button>
-        </div>
-
-        <div class="pw-width" role="group" aria-label="预览宽度">
+      <div class="pw-page__center">
+        <div v-if="view === 'scenes'" class="pw-width" role="group" aria-label="预览宽度">
           <button
             v-for="item in presets"
             :key="item.id"
@@ -288,6 +280,30 @@ onMounted(() => {
             <span class="pw-width__unit">px</span>
           </label>
         </div>
+      </div>
+
+      <div class="pw-page__actions">
+        <PlaygroundPluginSlot :entries="pluginHeaderSlots" slot="header" />
+        <div class="pw-view" role="tablist" aria-label="视图">
+          <button
+            type="button"
+            class="pw-view__btn"
+            :class="{ 'is-active': view === 'scenes' }"
+            @click="view = 'scenes'"
+          >
+            场景
+          </button>
+          <button
+            v-if="contract || moduleContract"
+            type="button"
+            class="pw-view__btn"
+            :class="{ 'is-active': view === 'api' }"
+            @click="view = 'api'"
+          >
+            API
+          </button>
+        </div>
+
         <PlaygroundEditorPicker />
         <button type="button" class="pw-head-btn" :data-tip="theme === 'dark' ? '切到浅色' : '切到深色'" :aria-label="theme === 'dark' ? '切到浅色' : '切到深色'" @click="emit('toggle-theme', $event)">
           <Moon v-if="theme === 'light'" :size="14" />
@@ -342,8 +358,15 @@ onMounted(() => {
             :notes="page.apiNotes"
             @jump="openScene"
           />
+          <PlaygroundModuleApi
+            v-else-if="moduleContract"
+            :module="moduleContract"
+            :scenes="scenes"
+            @jump="openScene"
+          />
           <p v-else class="pw-page__api-empty">
-            这一页没有绑定组件。在 <code>&lt;页&gt;/meta.ts</code> 里写 <code>component: 'MyButton'</code> 就会生成 API 表。
+            这一页没有绑定组件。在 <code>&lt;页&gt;/meta.ts</code> 里写 <code>component: 'MyButton'</code> 就会生成组件 API 表；
+            写 <code>module: 'money'</code> 则生成函数 / 常量 API 表。
           </p>
         </div>
           </div>
@@ -371,7 +394,10 @@ onMounted(() => {
   min-height: 0;
 
   &__head {
-    display: flex;
+    /* 三列：左 1fr / 中 auto / 右 1fr —— 宽度控件才能落在页面真正的正中，
+       而不是跟着右侧按钮数量左右飘 */
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
     gap: 12px;
     /* 与侧栏品牌条（.pw-sidebar__brand 的 49px）严格等高：两条横线在分界处必须接上 */
@@ -380,12 +406,28 @@ onMounted(() => {
     border-bottom: 1px solid var(--rp-color-border);
   }
 
+  &__lead {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  &__center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+  }
+
   &__crumb {
     display: flex;
     align-items: center;
     gap: 8px;
     min-width: 0;
     font-size: 13px;
+    /* 窄窗口下宁可截断页名，也不要竖排成三行 */
+    white-space: nowrap;
   }
 
   /* 分组：实心标签，比原来的灰色「Card /」更容易认出来 */
@@ -411,11 +453,15 @@ onMounted(() => {
   }
 
   &__name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-weight: 600;
   }
 
   /* 场景数是元信息，用一根竖线隔开，不再贴着标题读成「概览 2 个场景」 */
   &__count {
+    flex: 0 0 auto;
     padding-left: 9px;
     border-left: 1px solid var(--rp-color-border);
     color: var(--rp-color-text-muted);
@@ -427,7 +473,8 @@ onMounted(() => {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-left: auto;
+    justify-self: end;
+    min-width: 0;
   }
 
   &__scroll {

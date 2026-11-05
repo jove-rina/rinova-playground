@@ -2,5 +2,6 @@ import { definePageMeta } from '@rinova/playground'
 
 export const pageMeta = definePageMeta({
   "title": "Badge",
-  "order": 2
+  "order": 2,
+  "component": "Badge"
 })

@@ -2,6 +2,8 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ChevronRight, Search } from '@lucide/vue'
 import PwInput from '../components/PwInput.vue'
+import { pluginFooterSlots } from '../plugin'
+import PlaygroundPluginSlot from './PlaygroundPluginSlot.vue'
 import type { SceneDescriptor } from '../types'
 
 interface NavPage {
@@ -410,6 +412,7 @@ watch(
     </nav>
 
     <footer class="pw-sidebar__footer">
+      <PlaygroundPluginSlot :entries="pluginFooterSlots" slot="sidebarFooter" />
       <span>{{ pageCount }} 个页面 · {{ sceneCount }} 个场景</span>
     </footer>
   </aside>
@@ -824,9 +827,9 @@ watch(
 
 .pw-sidebar__footer {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   padding: 9px 16px;
   border-top: 1px solid var(--rp-color-border);
   color: var(--rp-color-text-muted);

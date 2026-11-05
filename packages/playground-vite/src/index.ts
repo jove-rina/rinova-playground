@@ -3,16 +3,20 @@ import path from 'node:path'
 import { createJiti } from 'jiti'
 import { parse as parseSfc } from '@vue/compiler-sfc'
 import { buildManifest, writeManifest } from './manifest.js'
+import { buildModules } from './module-api.js'
+import { resolvePluginSpecifier } from './plugin-spec.js'
 import type { Plugin, ViteDevServer } from 'vite'
 
 const VIRTUAL_CONFIG = 'virtual:playground/config'
 const VIRTUAL_SCENES = 'virtual:playground/scenes'
 const VIRTUAL_API = 'virtual:playground/api'
+const VIRTUAL_PLUGINS = 'virtual:playground/plugins'
 
 const RESOLVED_ID: Record<string, string> = {
   [VIRTUAL_CONFIG]: `\0${VIRTUAL_CONFIG}`,
   [VIRTUAL_SCENES]: `\0${VIRTUAL_SCENES}`,
   [VIRTUAL_API]: `\0${VIRTUAL_API}`,
+  [VIRTUAL_PLUGINS]: `\0${VIRTUAL_PLUGINS}`,
 }
 
 const CONFIG_FILES = [
@@ -56,6 +60,8 @@ interface PageMeta {
   order?: number
   /** 这一页演示哪个组件（用于生成 API 表）；不写则按页目录名自动匹配 */
   component?: string
+  /** 这一页展示哪个非组件模块（`config.modules` 里的文件名）；不写则按页目录名匹配 */
+  module?: string
   /** API 补充说明，键格式 `events:press` */
   apiNotes?: Record<string, string>
   /** 这一页是否展示源码；不写则跟随全局 sources（Markdown 场景默认不展示） */
@@ -122,6 +128,8 @@ interface PageEntry {
   order: number
   /** 页绑定的组件名（pageMeta.component） */
   component?: string
+  /** 页绑定的模块名（pageMeta.module） */
+  module?: string
   /** API 补充说明 */
   apiNotes?: Record<string, string>
   /** 页级源码开关（pageMeta.showSource） */
@@ -137,10 +145,16 @@ interface PlaygroundUserConfig {
   port?: number
   /** 契约清单要扫描的组件 glob（如 src/components 下所有 .vue）；不配则不生成 manifest */
   components?: string[]
+  /** 非组件模块 glob（如 src/lib/**\/*.ts）—— 抽函数 / hooks / 常量的契约 */
+  modules?: unknown
   /** 组件提取用的 tsconfig，默认项目根的 tsconfig.json */
   tsconfig?: string
   /** 分组目录名 → 侧栏显示名 */
   groups?: Record<string, string>
+  /** 运行时插件模块路径 */
+  plugins?: unknown
+  /** 供场景读取的纯常量 */
+  globals?: Record<string, unknown>
   /** 本地 IDE 打开：{ preset: 'vscode' | 'cursor' | 'webstorm', custom?: string } */
   editor?: { preset?: string; custom?: string; exposeRoot?: boolean }
   [key: string]: unknown
@@ -157,6 +171,8 @@ const titleize = (name: string): string => {
 }
 
 const toPosix = (value: string): string => value.split(path.sep).join('/')
+
+const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
 /** `---` 头：`key: value` / `key: [a, b]`。只用于 Markdown 场景，标题排序标签够用 */
 const parseFrontmatter = (source: string): Record<string, string | string[]> => {
@@ -282,6 +298,8 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
         files: Array.isArray(meta.files) ? meta.files.map(String) : undefined,
         section: isSection(meta.section) ? meta.section : undefined,
         api: Array.isArray(meta.api) ? meta.api.map(String).filter(Boolean) : undefined,
+        // 场景级源码开关：.md 走 frontmatter，.vue 走 sceneMeta，两边要保持一致
+        showSource: typeof meta.showSource === 'boolean' ? meta.showSource : undefined,
       }
     } catch (error) {
       console.warn(
@@ -328,6 +346,7 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
           description: typeof meta.description === 'string' ? meta.description : undefined,
           order: typeof meta.order === 'number' ? meta.order : undefined,
           component: typeof meta.component === 'string' ? meta.component : undefined,
+          module: typeof meta.module === 'string' ? meta.module : undefined,
           apiNotes:
             meta.apiNotes && typeof meta.apiNotes === 'object'
               ? Object.fromEntries(Object.entries(meta.apiNotes).map(([key, value]) => [key, String(value)]))
@@ -394,6 +413,7 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
           description: meta.description,
           order: typeof meta.order === 'number' ? meta.order : Number.MAX_SAFE_INTEGER,
           component: meta.component,
+          module: meta.module,
           apiNotes: meta.apiNotes,
           showSource: meta.showSource,
           doc: meta.doc,
@@ -484,15 +504,24 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
 
   /** 生成契约清单（.playground/manifest.json + llms.txt + coverage.md） */
   const generateManifest = (): void => {
-    const patterns = config.components
-    if (!Array.isArray(patterns) || !patterns.length || !scenes.length) return
+    const patterns = Array.isArray(config.components) ? config.components : []
+    const modulePatterns = Array.isArray(config.modules)
+      ? config.modules.filter((item): item is string => typeof item === 'string' && item.trim() !== '')
+      : []
+    if ((!patterns.length && !modulePatterns.length) || !scenes.length) return
     const startedAt = Date.now()
     try {
+      const tsconfig = typeof config.tsconfig === 'string' ? config.tsconfig : 'tsconfig.json'
+      // 非组件模块：函数 / hooks / 常量的契约（只有配了 modules 才会建 Program）
+      const modules = modulePatterns.length
+        ? buildModules({ root, patterns: modulePatterns, tsconfig, scenes })
+        : []
       const manifest = buildManifest({
         root,
         patterns,
-        tsconfig: typeof config.tsconfig === 'string' ? config.tsconfig : 'tsconfig.json',
+        tsconfig,
         scenes,
+        modules,
       })
       writeManifest(path.join(root, '.playground'), manifest)
       // 契约变了要让 API 模块失效：下次请求重新注入
@@ -500,8 +529,10 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
       if (apiMod && devServer) devServer.moduleGraph.invalidateModule(apiMod)
       const props = manifest.components.reduce((sum, item) => sum + item.props.length, 0)
       const uncovered = manifest.components.reduce((sum, item) => sum + item.uncoveredProps.length, 0)
+      const functions = manifest.modules.reduce((sum, item) => sum + item.functions.length, 0)
       console.log(
-        `[rinova-playground] 契约清单：${manifest.components.length} 个组件 / ${props} props / 未覆盖 ${uncovered} → .playground/（${Date.now() - startedAt}ms）`
+        `[rinova-playground] 契约清单：${manifest.components.length} 个组件 / ${props} props / 未覆盖 ${uncovered} → .playground/（${Date.now() - startedAt}ms）` +
+          (manifest.modules.length ? `；模块 ${manifest.modules.length} 个 / ${functions} 个函数` : '')
       )
     } catch (error) {
       console.warn(
@@ -550,21 +581,27 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
    */
   const apiModuleCode = (): string => {
     const manifestPath = path.join(root, '.playground/manifest.json')
+    const hasComponents = Array.isArray(config.components) && config.components.length > 0
+    const hasModules = Array.isArray(config.modules) && config.modules.length > 0
+    const empty = 'export const api = {}\nexport const pageComponents = {}\nexport const modules = {}\nexport const pageModules = {}\n'
     // 首次请求时清单可能还没生成（dev 下 buildStart 与首个请求的先后不保证）
-    if (!fs.existsSync(manifestPath) && Array.isArray(config.components) && config.components.length) {
-      generateManifest()
-    }
-    if (!fs.existsSync(manifestPath)) return 'export const api = {}\nexport const pageComponents = {}\n'
+    if (!fs.existsSync(manifestPath) && (hasComponents || hasModules)) generateManifest()
+    if (!fs.existsSync(manifestPath)) return empty
 
-    let manifest: { components: Array<{ name: string }> } | null = null
+    let manifest: { components?: Array<{ name: string }>; modules?: Array<{ name: string }> } | null = null
     try {
-      manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as { components: Array<{ name: string }> }
+      manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as {
+        components?: Array<{ name: string }>
+        modules?: Array<{ name: string }>
+      }
     } catch {
-      return 'export const api = {}\nexport const pageComponents = {}\n'
+      return empty
     }
-    if (!manifest?.components?.length) return 'export const api = {}\nexport const pageComponents = {}\n'
+    const components = manifest?.components ?? []
+    const modules = manifest?.modules ?? []
+    if (!components.length && !modules.length) return empty
 
-    const byName = new Map(manifest.components.map((item) => [item.name.toLowerCase(), item]))
+    const byName = new Map(components.map((item) => [item.name.toLowerCase(), item]))
     const pageComponents: Record<string, string> = {}
     const used = new Map<string, unknown>()
 
@@ -583,8 +620,30 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
       used.set(hit.name, hit)
     }
 
+    // 非组件模块：pageMeta.module 优先，其次按页目录名同名匹配
+    const moduleByName = new Map(modules.map((item) => [item.name.toLowerCase(), item]))
+    const pageModules: Record<string, string> = {}
+    const usedModules = new Map<string, unknown>()
+
+    for (const page of pages) {
+      const candidates = [
+        page.module,
+        page.id.split('/').slice(-1)[0],
+        page.title.replace(/\s+/g, ''),
+      ].filter(Boolean) as string[]
+
+      const hit = candidates
+        .map((candidate) => moduleByName.get(candidate.toLowerCase()))
+        .find((item) => Boolean(item))
+      if (!hit) continue
+      pageModules[page.id] = hit.name
+      usedModules.set(hit.name, hit)
+    }
+
     return `export const api = ${JSON.stringify(Object.fromEntries(used))}
 export const pageComponents = ${JSON.stringify(pageComponents)}
+export const modules = ${JSON.stringify(Object.fromEntries(usedModules))}
+export const pageModules = ${JSON.stringify(pageModules)}
 `
   }
 
@@ -646,6 +705,7 @@ export const pageComponents = ${JSON.stringify(pageComponents)}
     description: ${JSON.stringify(page.description ?? null)},
     order: ${JSON.stringify(page.order)},
     component: ${JSON.stringify(page.component ?? null)},
+    module: ${JSON.stringify(page.module ?? null)},
     apiNotes: ${JSON.stringify(page.apiNotes ?? null)},
     showSource: ${JSON.stringify(page.showSource ?? null)},
     doc: ${JSON.stringify(page.doc ?? null)}
@@ -661,6 +721,36 @@ export const pages = [
 ${pageCode}
 ]
 `
+  }
+
+  /**
+   * 插件虚拟模块：把 config.plugins 变成懒加载入口。
+   * 走动态 import，dev 与 build 完全同一条路径 —— 不存在「只有 dev 可用」的分支。
+   */
+  const pluginsModuleCode = (): string => {
+    const entries = Array.isArray(config.plugins) ? config.plugins : []
+    const specs: string[] = []
+    for (const item of entries) {
+      if (typeof item !== 'string' || !item.trim()) {
+        console.warn('[rinova-playground] plugins 的每一项都必须是字符串路径，已跳过：', item)
+        continue
+      }
+      try {
+        const spec = resolvePluginSpecifier(root, item)
+        if (spec.startsWith('/') && !fs.existsSync(path.join(root, spec))) {
+          const message = `插件文件不存在：${item}`
+          if (isBuild) throw new Error(message)
+          console.warn(`[rinova-playground] ${message}`)
+        }
+        specs.push(spec)
+      } catch (error) {
+        console.warn(`[rinova-playground] ${messageOf(error)}，已跳过`)
+      }
+    }
+    if (!specs.length) return 'export const pluginModules = []\n'
+    return `export const pluginModules = [\n${specs
+      .map((spec) => `  () => import(${JSON.stringify(spec)}),`)
+      .join('\n')}\n]\n`
   }
 
   return {
@@ -706,6 +796,10 @@ ${pageCode}
       if (id === RESOLVED_ID[VIRTUAL_API]) {
         await ensureReady()
         return apiModuleCode()
+      }
+      if (id === RESOLVED_ID[VIRTUAL_PLUGINS]) {
+        await ensureReady()
+        return pluginsModuleCode()
       }
       if (id !== RESOLVED_ID[VIRTUAL_CONFIG] && id !== RESOLVED_ID[VIRTUAL_SCENES]) return null
       await ensureReady()
@@ -755,6 +849,32 @@ ${pageCode}
         scheduleManifest()
       }
 
+      // 插件文件改动 → 整页重载（插件状态会重置，这是期望行为：登录态得重新拿）
+      const pluginFiles = new Set<string>()
+      const watchPlugins = (): void => {
+        for (const item of Array.isArray(config.plugins) ? config.plugins : []) {
+          if (typeof item !== 'string' || !item.trim()) continue
+          let spec = ''
+          try {
+            spec = resolvePluginSpecifier(root, item)
+          } catch {
+            continue
+          }
+          if (!spec.startsWith('/')) continue
+          const abs = path.join(root, spec)
+          if (pluginFiles.has(abs) || !fs.existsSync(abs)) continue
+          pluginFiles.add(abs)
+          server.watcher.add(abs)
+        }
+      }
+      watchPlugins()
+      server.watcher.on('change', (file) => {
+        if (!pluginFiles.has(path.resolve(file))) return
+        const mod = server.moduleGraph.getModuleById(RESOLVED_ID[VIRTUAL_PLUGINS] as string)
+        if (mod) server.moduleGraph.invalidateModule(mod)
+        server.ws.send({ type: 'full-reload' })
+      })
+
       watchComponents()
       server.watcher.on('change', onComponentChange)
       server.watcher.on('add', onComponentChange)
@@ -770,6 +890,9 @@ ${pageCode}
         invalidateScenes(server)
         await ensureReady()
         watchComponents()
+        watchPlugins()
+        const pluginMod = server.moduleGraph.getModuleById(RESOLVED_ID[VIRTUAL_PLUGINS] as string)
+        if (pluginMod) server.moduleGraph.invalidateModule(pluginMod)
         scheduleManifest(0)
         server.ws.send({ type: 'full-reload' })
       })

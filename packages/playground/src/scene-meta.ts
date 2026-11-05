@@ -38,8 +38,10 @@ export interface PageMeta {
   description?: string
   /** 分组内排序，小的在前 */
   order?: number
-  /** 这一页演示哪个组件（用于生成页面 API 表）；不写则按页目录名自动匹配 */
+  /** 这一页绑定哪个组件（用于 API 表）；不写则按页目录名自动匹配 */
   component?: string
+  /** 这一页绑定哪个非组件模块（`config.modules` 的文件名）；不写则按页目录名匹配 */
+  module?: string
   /**
    * API 表的补充说明，键格式 `props:size` / `events:press` / `slots:icon` / `exposed:focus`。
    * 用来补 JSDoc 覆盖不到的地方（目前事件说明无法从 defineEmits 提取）。

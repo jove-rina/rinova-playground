@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import type { ModuleApi } from './module-api.js'
 
 const require = createRequire(import.meta.url)
 
@@ -113,6 +114,8 @@ export interface Manifest {
   generatedAt: string
   components: ManifestComponent[]
   scenes: ManifestScene[]
+  /** 非组件文件（函数 / hooks / 常量）的契约；配了 config.modules 才有 */
+  modules: ModuleApi[]
 }
 
 export interface ManifestInput {
@@ -121,6 +124,8 @@ export interface ManifestInput {
   patterns: string[]
   /** tsconfig 路径（相对项目根） */
   tsconfig: string
+  /** 已经抽好的非组件模块契约 */
+  modules?: ModuleApi[]
   scenes: Array<{
     id: string
     title: string
@@ -504,6 +509,7 @@ export const buildManifest = (input: ManifestInput): Manifest => {
   return {
     generatedAt: new Date().toISOString(),
     components,
+    modules: input.modules ?? [],
     scenes: input.scenes.map((scene) => ({
       id: scene.id,
       title: scene.title,
@@ -517,7 +523,6 @@ export const buildManifest = (input: ManifestInput): Manifest => {
 
 export const renderLlmsTxt = (manifest: Manifest): string => {
   const lines: string[] = ['# 组件能力清单（rinova-playground 生成）', '']
-
   for (const component of manifest.components) {
     lines.push(`## ${component.name} (${component.rel})`, '')
     if (!component.props.length) lines.push('- 无对外 props')
@@ -545,6 +550,30 @@ export const renderLlmsTxt = (manifest: Manifest): string => {
       lines.push(`- 未覆盖 props: ${component.uncoveredProps.join(', ')}`)
     if (component.undocumented.length)
       lines.push(`- 缺说明: ${component.undocumented.join(', ')}`)
+    lines.push('')
+  }
+
+  for (const module of manifest.modules ?? []) {
+    lines.push(`## ${module.name} (${module.rel})`, '')
+    for (const fn of module.functions) {
+      lines.push(`- ${fn.kind} ${fn.signature}`)
+      if (fn.description) lines.push(`  ${fn.description}`)
+      for (const param of fn.params) {
+        const flags = [param.optional ? '可选' : '', param.default ? `默认 ${param.default}` : '']
+          .filter(Boolean)
+          .join(', ')
+        lines.push(
+          `  - 参数 ${param.name}: ${param.type}${flags ? ` (${flags})` : ''}${param.description ? ` — ${param.description}` : ''}`
+        )
+      }
+      if (fn.returns) lines.push(`  返回: ${fn.returns}`)
+    }
+    for (const constant of module.constants) {
+      lines.push(`- const ${constant.name}: ${constant.type}${constant.value ? ` = ${constant.value}` : ''}`)
+      if (constant.description) lines.push(`  ${constant.description}`)
+    }
+    if (module.scenes.length) lines.push(`- 相关场景: ${module.scenes.join(', ')}`)
+    if (module.uncovered.length) lines.push(`- 未覆盖: ${module.uncovered.join(', ')}`)
     lines.push('')
   }
 

@@ -33,8 +33,25 @@ export interface PlaygroundConfig {
   port?: number
   /** 契约清单要扫描的组件 glob（如 src/components 下所有 .vue）；不配则不生成 manifest */
   components?: string[]
+  /**
+   * 非组件模块 glob（如 `src/lib/**` + `/*.ts`）：函数 / hooks / 常量的契约。
+   * 抽出来的内容进 API 页签的「函数 / 常量」表，并写进 manifest / llms.txt。
+   */
+  modules?: string[]
   /** 组件契约提取用的 tsconfig，默认项目根的 tsconfig.json */
   tsconfig?: string
+  /**
+   * 供场景读取的纯常量（如 apiBase / appName）。
+   * ⚠️ 会明文进构建产物、任何人都能看到，禁止放 token / 密钥，这类值必须走插件运行时获取。
+   * 场景里用 `usePlaygroundEnv()` 读取；插件返回值会覆盖同名字段。
+   */
+  globals?: Record<string, unknown>
+  /**
+   * 运行时插件模块路径，如 `['./src/playground/plugins.ts']`。
+   * 只接受路径而不是内联对象：配置会 `JSON.stringify` 进虚拟模块，函数无法序列化。
+   * 规则：`./x` 相对项目根；`/x` 与 `@/x` 原样交给 Vite。
+   */
+  plugins?: string[]
   /**
    * 分组（scenes 下的一级目录名）→ 侧栏显示名。
    * 例如 `{ 'tao-common': 'Tao 通用组件' }`；不配时用目录名首字母大写化。

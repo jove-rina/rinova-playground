@@ -16,6 +16,25 @@ export { useSceneArgs, currentArgs, currentArgsSlots } from './payload/args'
 export type { SceneArgs, SceneArgsOptions, SceneArgsBinding } from './payload/args'
 export { useSceneOutput, currentOutput, currentOutputSlots } from './payload/output'
 export type { SceneSnapshot, SceneOutputBinding } from './payload/output'
+export { definePlaygroundPlugin } from './plugin'
+export type {
+  PlaygroundPlugin,
+  PlaygroundPluginContext,
+  PlaygroundResolvedConfig,
+  PlaygroundUiApi,
+  PlaygroundUiOptions,
+  PlaygroundPanelOptions,
+  PlaygroundPanelHandle,
+} from './plugin'
+export {
+  usePlaygroundEnv,
+  usePlaygroundPlugin,
+  usePlaygroundTheme,
+  usePlaygroundUi,
+  openPlaygroundPanel,
+  closePlaygroundPanel,
+  togglePlaygroundPanel,
+} from './plugin'
 
 export interface CreatePlaygroundOptions {
   /** 挂载点，默认 `#app` */
@@ -42,7 +61,7 @@ export const createPlayground = async (options: CreatePlaygroundOptions = {}): P
     )
   }
 
-  const { default: App } = (await import('./app/App.vue')) as { default: Component }
+  const { default: Root } = (await import('./app/PlaygroundRoot.vue')) as { default: Component }
 
-  createApp(App).mount(target as Element)
+  createApp(Root).mount(target as Element)
 }

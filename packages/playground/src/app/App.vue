@@ -5,8 +5,11 @@ import { pages, scenes } from 'virtual:playground/scenes'
 import PwToastHost from '../components/PwToastHost.vue'
 import PwTooltip from '../components/PwTooltip.vue'
 import { currentOutputSlots } from '../payload/output'
+import { providePlaygroundTheme } from '../plugin'
+import '../styles/api.less'
 import '../styles/theme.less'
 import PlaygroundPage from './PlaygroundPage.vue'
+import PlaygroundPluginPanel from './PlaygroundPluginPanel.vue'
 import PlaygroundSidebar from './PlaygroundSidebar.vue'
 import { DEFAULT_VIEWPORT, type ViewportState } from './viewport'
 import type { PageDescriptor, SceneDescriptor } from '../types'
@@ -156,6 +159,9 @@ const systemDark = ref(false)
 const theme = computed<'light' | 'dark'>(() =>
   preference.value === 'auto' ? (systemDark.value ? 'dark' : 'light') : preference.value
 )
+
+/** 插件 UI 跟随外壳主题：给它们一个 computed，而不是让它们猜 DOM */
+providePlaygroundTheme(theme)
 
 watchEffect(() => {
   document.documentElement.dataset.pwTheme = theme.value
@@ -322,6 +328,7 @@ onBeforeUnmount(() => {
 
     <PwToastHost />
     <PwTooltip />
+    <PlaygroundPluginPanel />
   </div>
 </template>
 

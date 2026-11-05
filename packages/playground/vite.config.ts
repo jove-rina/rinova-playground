@@ -10,7 +10,7 @@ export default defineConfig({
       fileName: () => 'index.js',
     },
     rolldownOptions: {
-      external: ['vue', 'virtual:playground/config', 'virtual:playground/scenes', 'virtual:playground/api'],
+      external: ['vue', 'virtual:playground/config', 'virtual:playground/scenes', 'virtual:playground/api', 'virtual:playground/plugins'],
       output: {
         assetFileNames: (assetInfo) => (assetInfo.name?.endsWith('.css') ? 'style.css' : 'assets/[name][extname]'),
       },

@@ -8,8 +8,10 @@ import PwApiBrief from '../components/PwApiBrief.vue'
 import PlaygroundSceneArgs from './PlaygroundSceneArgs.vue'
 import PlaygroundSceneSource from './PlaygroundSceneSource.vue'
 import PlaygroundSceneOutput from './PlaygroundSceneOutput.vue'
+import PlaygroundPluginWrappers from './PlaygroundPluginWrappers.vue'
 import PwSceneBoundary from '../components/PwSceneBoundary.vue'
 import { provideSceneContext } from '../payload/context'
+import { pluginWrapperEntries } from '../plugin'
 import { currentArgsSlots } from '../payload/args'
 import { api, pageComponents } from 'virtual:playground/api'
 import { currentOutputSlots } from '../payload/output'
@@ -154,8 +156,10 @@ defineExpose({ mount })
       </div>
       <div v-else class="pw-scene__canvas" :data-pw-stage="stageTheme">
         <PwSceneBoundary :title="scene.title" :file="scene.rel">
-          <component :is="component" v-if="component" />
-          <div v-else class="pw-scene__skeleton" aria-hidden="true" />
+          <PlaygroundPluginWrappers :entries="pluginWrapperEntries">
+            <component :is="component" v-if="component" />
+            <div v-else class="pw-scene__skeleton" aria-hidden="true" />
+          </PlaygroundPluginWrappers>
         </PwSceneBoundary>
       </div>
     </div>

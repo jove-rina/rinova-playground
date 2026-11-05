@@ -1,6 +1,6 @@
 {
   "name": "@rinova/playground",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "description": "面向 Vue3 的「文件即场景」组件演示框架",
   "type": "module",
   "license": "MIT",

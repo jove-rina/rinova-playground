@@ -60,6 +60,8 @@ export interface PageDescriptor {
   order: number
   /** 这一页演示的组件名（pageMeta.component 或按目录名匹配） */
   component: string | null
+  /** 这一页展示的非组件模块名（pageMeta.module 或按目录名匹配） */
+  module?: string | null
   /** API 补充说明（pageMeta.apiNotes），键格式 `events:press` */
   apiNotes: Record<string, string> | null
   /** 这一页是否展示场景源码（pageMeta.showSource），未设置时跟随全局 sources */

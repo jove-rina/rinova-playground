@@ -142,6 +142,12 @@
        给单元格一个下限，auto 布局就不会把「标题区」拆成「标题 / 区」 */
     min-width: 88px;
     overflow-wrap: anywhere;
+
+    /* 行内代码整词不断行：defineSceneMeta(meta) 断成 defineSceneMeta(me / ta) 像拼错 */
+    code {
+      overflow-wrap: normal;
+      white-space: nowrap;
+    }
   }
 
   th {

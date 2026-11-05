@@ -814,6 +814,145 @@ record(
   globFails.length ? globFails.map(([pattern, file]) => `${pattern} ~ ${file}`).join(', ') : `${globCases.length} 条用例`,
 )
 
+/* 14. 插件：路径解析 / 测试床文件存在 / 虚拟模块数量 */
+const { resolvePluginSpecifier } = await import('../packages/playground-vite/src/plugin-spec.ts')
+const pluginRoot = path.join(root, 'examples/minimal-lib')
+const specCases: Array<[input: string, expected: string | null]> = [
+  ['./src/playground/plugins.ts', '/src/playground/plugins.ts'],
+  ['/src/playground/plugins.ts', '/src/playground/plugins.ts'],
+  ['@/playground/plugins', '@/playground/plugins'],
+  ['my-plugin', 'my-plugin'],
+  ['../outside.ts', null],
+  ['', null],
+]
+const specFails = specCases.filter(([input, expected]) => {
+  try {
+    return resolvePluginSpecifier(pluginRoot, input) !== expected
+  } catch {
+    return expected !== null
+  }
+})
+record(
+  '插件路径解析（相对 / 根相对 / alias / 包名 / 越界 / 空串）',
+  specFails.length === 0,
+  specFails.length
+    ? specFails.map(([input]) => `失败：${input || '(空串)'}`).join(', ')
+    : `${specCases.length} 条用例`,
+)
+
+const minimalConfigFile = path.join(pluginRoot, 'playground.config.ts')
+const pluginBlock = fs.existsSync(minimalConfigFile)
+  ? (fs.readFileSync(minimalConfigFile, 'utf8').match(/plugins:\s*\[([\s\S]*?)\]/)?.[1] ?? '')
+  : ''
+const declaredPlugins = [...pluginBlock.matchAll(/['"]([^'"]+)['"]/g)]
+  .map((match) => match[1])
+  .filter((value): value is string => Boolean(value))
+const missingPlugins = declaredPlugins.filter((spec) => {
+  try {
+    const resolved = resolvePluginSpecifier(pluginRoot, spec)
+    return resolved.startsWith('/') && !fs.existsSync(path.join(pluginRoot, resolved))
+  } catch {
+    return true
+  }
+})
+record(
+  '测试床插件文件可解析',
+  declaredPlugins.length === 1 && missingPlugins.length === 0,
+  missingPlugins.length
+    ? `找不到：${missingPlugins.join(', ')}`
+    : `${declaredPlugins.length} 个：${declaredPlugins.join(', ')}`,
+)
+
+const pluginCount = async (port: number): Promise<number | null> => {
+  try {
+    const res = await fetch(`http://localhost:${port}/@id/__x00__virtual:playground/plugins`, {
+      signal: AbortSignal.timeout(2000),
+    })
+    if (!res.ok) return null
+    return ((await res.text()).match(/\(\) => import\(/g) ?? []).length
+  } catch {
+    return null
+  }
+}
+const minimalPlugins = await pluginCount(5273)
+const docsPlugins = await pluginCount(5280)
+// docs-site 没配 plugins：dev server 没起时是 null，起了必须是 0
+const pluginsOk = minimalPlugins === null || (minimalPlugins === 1 && (docsPlugins === null || docsPlugins === 0))
+record(
+  '插件虚拟模块数量与配置一致（不配为空）',
+  pluginsOk,
+  minimalPlugins === null
+    ? 'dev server 未运行，跳过'
+    : `minimal-lib ${minimalPlugins} 个 / docs-site ${docsPlugins === null ? '未运行' : `${docsPlugins} 个`}`,
+)
+
+/* 15. 非组件模块：函数 / 常量契约 + 页绑定 */
+const minimalManifestFile = path.join(root, 'examples/minimal-lib/.playground/manifest.json')
+let moduleDetail = 'manifest 未生成，跳过'
+let moduleOk = true
+if (fs.existsSync(minimalManifestFile)) {
+  const manifest = JSON.parse(fs.readFileSync(minimalManifestFile, 'utf8')) as {
+    modules?: Array<{
+      name: string
+      rel: string
+      functions: Array<{ name: string; signature: string; params: unknown[]; returns: string; covered: boolean }>
+      constants: Array<{ name: string }>
+      types: Array<{ name: string; code: string }>
+    }>
+  }
+  const modules = manifest.modules ?? []
+  const byName = new Map(modules.map((item) => [item.name, item]))
+  const money = byName.get('money')
+  const hooks = byName.get('useDebounce')
+  const constants = byName.get('constants')
+  const format = money?.functions.find((fn) => fn.name === 'formatMoney')
+  const problems: string[] = []
+  if (!money) problems.push('缺 money 模块')
+  if (!hooks) problems.push('缺 useDebounce 模块')
+  if (!constants) problems.push('缺 constants 模块')
+  if (!format) problems.push('缺 formatMoney')
+  else {
+    if (!/^formatMoney\(value: number, options\?: FormatMoneyOptions\): string$/.test(format.signature))
+      problems.push(`formatMoney 签名不对：${format.signature}`)
+    if (format.params.length !== 2) problems.push(`formatMoney 参数 ${format.params.length} ≠ 2`)
+    if (format.returns !== 'string') problems.push(`formatMoney 返回 ${format.returns}`)
+    if (!format.covered) problems.push('formatMoney 应标记为已覆盖')
+  }
+  if (!hooks?.functions.some((fn) => fn.name === 'useDebounce')) problems.push('useDebounce 不是函数')
+  if (!constants?.constants.some((item) => item.name === 'ORDER_STATUS')) problems.push('缺 ORDER_STATUS 常量')
+  // 类型页签：导出 interface / type 原文必须带字段 JSDoc
+  if (!money?.types.some((type) => type.name === 'FormatMoneyOptions' && type.code.includes('币种代码')))
+    problems.push('FormatMoneyOptions 类型未带 JSDoc')
+  moduleOk = problems.length === 0
+  moduleDetail = problems.length
+    ? problems.join('; ')
+    : `${modules.length} 个模块：${modules.map((item) => `${item.name}(${item.functions.length}fn/${item.constants.length}const/${item.types.length}type)`).join(' / ')}`
+}
+record('非组件模块契约（函数签名 / 参数 / 常量 / 类型）', moduleOk, moduleDetail)
+
+/* 16. 运行时：API 虚拟模块里的模块绑定 */
+let apiModuleOk = true
+let apiModuleDetail = 'dev server 未运行，跳过'
+try {
+  const res = await fetch('http://localhost:5273/@id/__x00__virtual:playground/api', {
+    signal: AbortSignal.timeout(2000),
+  })
+  const code = await res.text()
+  const modulesMatch = code.match(/export const modules = (\{[\s\S]*?\})\nexport const pageModules = (\{[\s\S]*?\})\n/)
+  if (!modulesMatch) {
+    apiModuleOk = false
+    apiModuleDetail = 'API 模块缺少 modules / pageModules'
+  } else {
+    const modules = JSON.parse(modulesMatch[1] ?? '{}') as Record<string, unknown>
+    const pageModules = JSON.parse(modulesMatch[2] ?? '{}') as Record<string, string>
+    apiModuleOk = Boolean(modules.money) && pageModules['utils/money'] === 'money'
+    apiModuleDetail = `${Object.keys(modules).length} 个模块注入 / pageModules ${JSON.stringify(pageModules)}`
+  }
+} catch {
+  apiModuleDetail = 'dev server 未运行，跳过'
+}
+record('函数 API：模块契约进虚拟模块且页绑定正确', apiModuleOk, apiModuleDetail)
+
 /* 输出 */
 let failed = 0
 for (const item of results) {

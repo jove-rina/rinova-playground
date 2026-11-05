@@ -177,7 +177,7 @@ const main = async (): Promise<void> => {
     return
   }
 
-  const server = new McpServer({ name: 'rinova-playground', version: '0.1.0' })
+  const server = new McpServer({ name: 'rinova-playground', version: '0.5.0' })
 
   server.registerTool(
     'capability_search',
