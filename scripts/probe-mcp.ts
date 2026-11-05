@@ -63,6 +63,45 @@ const check = (name: string, pass: boolean, detail: string): void => {
   checks.push({ name, pass, detail })
 }
 
+/** 用一个新进程验证「不传 --project 时默认当前目录」 */
+const probeWithoutArgs = (cwd: string): Promise<{ ok: boolean; detail: string }> =>
+  new Promise((resolve) => {
+    const server = spawn('node', [bin], { cwd, stdio: ['pipe', 'pipe', 'pipe'] })
+    let text = ''
+    let err = ''
+    let settled = false
+    const done = (ok: boolean, detail: string): void => {
+      if (settled) return
+      settled = true
+      server.kill()
+      resolve({ ok, detail })
+    }
+    server.stderr.on('data', (chunk: Buffer) => {
+      err += chunk.toString()
+    })
+    server.stdout.on('data', (chunk: Buffer) => {
+      text += chunk.toString()
+      for (const line of text.split('\n')) {
+        if (!line.trim()) continue
+        try {
+          const message = JSON.parse(line) as { id?: number; result?: { tools?: { name: string }[] } }
+          if (message.id === 2) {
+            const names = (message.result?.tools ?? []).map((tool) => tool.name)
+            done(names.length === 7, `7 个工具：${names.includes('scene_validate')}`)
+          }
+        } catch {
+          // 还没收到完整 JSON，等下一块
+        }
+      }
+    })
+    server.stdin.write(
+      `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'probe', version: '0.0.0' } } })}\n`
+    )
+    server.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} })}\n`)
+    server.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })}\n`)
+    setTimeout(() => done(false, err.split('\n').filter(Boolean).slice(-1)[0] ?? '超时'), 15000)
+  })
+
 const run = async (): Promise<void> => {
   const init = await request('initialize', {
     protocolVersion: '2024-11-05',
@@ -160,6 +199,9 @@ const run = async (): Promise<void> => {
     (await call('scene_validate', { path: badPath })).isError,
     badPath
   )
+
+  const defaultCwd = await probeWithoutArgs(project)
+  check('不带 --project 时默认当前项目（并向上找清单）', defaultCwd.ok, defaultCwd.detail)
 
   child.kill()
 

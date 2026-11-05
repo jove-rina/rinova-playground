@@ -22,7 +22,8 @@ import Prose from '../../../components/Prose.vue'
         <tr><td><code>.playground/coverage.md</code></td><td>人</td><td>props 覆盖情况与缺 JSDoc 的 API</td></tr>
       </tbody>
     </table>
-    <p>三份都是生成物，跟着 <code>pnpm dev</code> / <code>pnpm build</code> 一起更新；场景增删改后清单 400ms 内重算。</p>
+    <p>三份都是生成物，跟着 <code>pnpm dev</code> / <code>pnpm build</code> 一起更新；场景增删改后清单 400ms 内重算，正在跑的 MCP 会话会在下一次工具调用时自动读到新内容（不用重启客户端）。</p>
+    <p>不传参数时按当前目录找清单，找不到就向上找 6 层；monorepo 多包才需要 <code>--project</code>。</p>
 
     <h2>接入</h2>
     <ol>
@@ -34,7 +35,7 @@ import Prose from '../../../components/Prose.vue'
   "mcpServers": {
     "rinova-playground": {
       "command": "npx",
-      "args": ["-y", "@rinova/playground-mcp", "--project", "."]
+      "args": ["-y", "@rinova/playground-mcp"]
     }
   }
 }</code></pre>

@@ -109,22 +109,86 @@ const locate = (root: string, rel: string, needle: string): string => {
   return hit ? `${rel}:${hit.index + 1}` : rel
 }
 
-const parseArgs = (argv: string[]): { project: string; manifest: string } => {
-  const args = argv.slice(2)
-  const projectIndex = args.indexOf('--project')
-  const manifestIndex = args.indexOf('--manifest')
-  const project = path.resolve(projectIndex > -1 ? (args[projectIndex + 1] ?? '.') : '.')
-  const manifest =
-    manifestIndex > -1
-      ? path.resolve(args[manifestIndex + 1] ?? '')
-      : path.join(project, '.playground/manifest.json')
-  return { project, manifest }
+const USAGE = `rinova-playground-mcp —— 把契约清单暴露给 AI 编码工具（只读）
+
+用法：
+  rinova-playground-mcp [--project <目录>] [--manifest <文件>]
+
+选项：
+  --project <目录>   项目根（默认：当前目录，并向上找 .playground/manifest.json）
+  --manifest <文件>  直接指定清单文件
+  -h, --help         显示帮助
+
+清单由 @rinova/playground-vite 在 pnpm dev / pnpm build 时生成，需要 playground.config.ts 里配置 components。
+`
+
+/** 从 start 向上最多 6 层找 .playground/manifest.json（客户端启动目录常常是包内子目录） */
+const findManifestUp = (start: string): string | null => {
+  let dir = path.resolve(start)
+  for (let depth = 0; depth < 6; depth += 1) {
+    const candidate = path.join(dir, '.playground/manifest.json')
+    if (fs.existsSync(candidate)) return candidate
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  return null
 }
 
-const loadManifest = (file: string): Manifest => {
+interface ResolvedArgs {
+  /** 项目根（含 .playground 的那一层），用于拼 `文件:行号` 锚点 */
+  project: string
+  manifest: string
+  /** 找不到清单时用来提示「从哪开始找的」 */
+  searchFrom: string
+}
+
+const readStamp = (file: string): string => {
+  try {
+    const stat = fs.statSync(file)
+    return `${stat.mtimeMs}:${stat.size}`
+  } catch {
+    return 'missing'
+  }
+}
+
+const parseArgs = (argv: string[]): ResolvedArgs => {
+  const args = argv.slice(2)
+  if (args.includes('--help') || args.includes('-h')) {
+    process.stdout.write(USAGE)
+    process.exit(0)
+  }
+  const readFlag = (flag: string): string | undefined => {
+    const index = args.indexOf(flag)
+    return index > -1 ? args[index + 1] : undefined
+  }
+
+  const manifestArg = readFlag('--manifest')
+  if (manifestArg) {
+    const manifest = path.resolve(manifestArg)
+    return { project: path.dirname(path.dirname(manifest)), manifest, searchFrom: path.dirname(manifest) }
+  }
+
+  const projectArg = readFlag('--project')
+  const base = projectArg ? path.resolve(projectArg) : process.cwd()
+  const found = findManifestUp(base)
+  return {
+    project: found ? path.dirname(path.dirname(found)) : base,
+    manifest: found ?? path.join(base, '.playground/manifest.json'),
+    searchFrom: base,
+  }
+}
+
+const loadManifest = (file: string, searchFrom: string): Manifest => {
   if (!fs.existsSync(file)) {
     throw new Error(
-      `找不到契约清单：${file}\n先运行 pnpm dev 或 pnpm build 生成（需要 playground.config.ts 里配置 components）`
+      [
+        `找不到契约清单：${file}`,
+        `（从 ${searchFrom} 向上找了 6 层）`,
+        '',
+        '生成方式：在项目里配置 playground.config.ts 的 components（可选 modules），然后跑一次 pnpm dev 或 pnpm build。',
+        '也可以在客户端配置里用 --project <项目根> 或 --manifest <.playground/manifest.json 的绝对路径> 显式指定。',
+      ].join('\n')
     )
   }
   return JSON.parse(fs.readFileSync(file, 'utf8')) as Manifest
@@ -209,18 +273,34 @@ const matches = (component: ManifestComponent, query: string): boolean => {
 }
 
 const main = async (): Promise<void> => {
-  const { project, manifest: manifestPath } = parseArgs(process.argv)
+  const { project, manifest: manifestPath, searchFrom } = parseArgs(process.argv)
 
   let manifest: Manifest
   try {
-    manifest = loadManifest(manifestPath)
+    manifest = loadManifest(manifestPath, searchFrom)
   } catch (error) {
     console.error(error instanceof Error ? error.message : error)
     process.exitCode = 1
     return
   }
 
-  const server = new McpServer({ name: 'rinova-playground', version: '0.7.0' })
+  /**
+   * 清单是构建产物，dev server 会在场景 / 组件变化后重写它。
+   * 每次工具调用前比一下 mtime+size，变了就重读 —— 否则 MCP 会一直拿启动那一刻的页面表。
+   */
+  let manifestStamp = readStamp(manifestPath)
+  const refresh = (): void => {
+    const stamp = readStamp(manifestPath)
+    if (stamp === manifestStamp) return
+    try {
+      manifest = loadManifest(manifestPath, searchFrom)
+      manifestStamp = stamp
+    } catch {
+      // 清单正在被写（JSON 半个文件）或暂时不可读：沿用上一次的，下次调用再试
+    }
+  }
+
+  const server = new McpServer({ name: 'rinova-playground', version: '0.7.1' })
 
   server.registerTool(
     'capability_search',
@@ -230,6 +310,7 @@ const main = async (): Promise<void> => {
       inputSchema: { query: z.string().min(1).describe('关键词'), limit: z.number().int().min(1).max(20).optional() },
     },
     ({ query, limit }) => {
+      refresh()
       const hits = manifest.components.filter((component) => matches(component, query)).slice(0, limit ?? 5)
       if (!hits.length) {
         return { content: [{ type: 'text', text: `没有匹配 "${query}" 的组件。已知组件：${manifest.components.map((item) => item.name).join(', ')}` }] }
@@ -254,6 +335,7 @@ const main = async (): Promise<void> => {
       inputSchema: { component: z.string().min(1).describe('组件名，如 MyButton') },
     },
     ({ component }) => {
+      refresh()
       const found = manifest.components.find(
         (item) => item.name.toLowerCase() === component.toLowerCase() || item.rel.endsWith(component)
       )
@@ -277,6 +359,7 @@ const main = async (): Promise<void> => {
       inputSchema: { component: z.string().optional().describe('组件名，可选') },
     },
     ({ component }) => {
+      refresh()
       const scenes = component
         ? manifest.scenes.filter((scene) => {
             const target = manifest.components.find((item) => item.name === component)
@@ -301,6 +384,7 @@ const main = async (): Promise<void> => {
       inputSchema: {},
     },
     () => {
+      refresh()
       const rows = manifest.components.flatMap((component) =>
         component.uncoveredProps.map((prop) => `- ${component.name}.${prop}  ← ${locate(project, component.rel, prop)}`)
       )
@@ -373,7 +457,10 @@ const main = async (): Promise<void> => {
       description: '返回 globals / 插件 / 分组 / 页面清单与外壳能力，写场景前先读它',
       inputSchema: {},
     },
-    () => ({ content: [{ type: 'text', text: formatEnv(manifest) }] })
+    () => {
+      refresh()
+      return { content: [{ type: 'text', text: formatEnv(manifest) }] }
+    }
   )
 
   server.registerTool(
@@ -393,6 +480,7 @@ const main = async (): Promise<void> => {
       },
     },
     ({ title, page, group, component, lang, section, api, slug }) => {
+      refresh()
       const env = manifest.env
       if (!env) {
         return {
@@ -520,6 +608,7 @@ const main = async (): Promise<void> => {
       },
     },
     ({ path: target }) => {
+      refresh()
       if (!manifest.env) {
         return {
           content: [{ type: 'text', text: '这份清单里没有 env 段，无法校验。先跑一次 pnpm dev 重新生成清单。' }],

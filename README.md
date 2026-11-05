@@ -22,7 +22,7 @@ const size = ref('large')
 
 ## 状态
 
-v0.7.0 已发布到 npm：`@rinova/playground`、`@rinova/playground-vite`、`@rinova/playground-mcp`、`create-rinova-playground`。M0–M5、M6、M8、v0.7 AI 能力面验收全绿（v0.6 编辑能力暂缓）。
+v0.7.1 已发布到 npm：`@rinova/playground`、`@rinova/playground-vite`、`@rinova/playground-mcp`、`create-rinova-playground`。M0–M5、M6、M8、v0.7 AI 能力面验收全绿（v0.6 编辑能力暂缓）。
 
 ```bash
 pnpm install
@@ -30,8 +30,10 @@ pnpm dev        # 示例项目  → http://localhost:5273
 pnpm dev:docs   # 文档站     → http://localhost:5280
 pnpm build      # 构建示例（产物含 manifest.json / llms.txt / coverage.md）
 pnpm verify     # 65 项验收（三个示例全查：目录三层、页/场景一致、API 绑定、契约结构、env 段、llms 手册、场景校验规则）
-pnpm verify:mcp # MCP server 冒烟（14 项：七个工具 + 只读闭环）
-pnpm verify:loop # AI 写作闭环（写场景 → 清单热更新 → 校验；会临时写测试床文件）
+pnpm verify:mcp        # MCP 冒烟（15 项：七个工具 + 默认当前目录）
+pnpm verify:mcp:reload # 清单重写后自动重读（4 项）
+pnpm verify:mcp:edge   # 找不到清单 / --project / --manifest / 坏 JSON（5 项）
+pnpm verify:loop       # AI 写作闭环（写场景 → 清单热更新 → 校验；会临时写测试床文件）
 ```
 
 ## 示例
@@ -53,7 +55,27 @@ src/scenes/<分组>/<组件页>/meta.ts   # 可选：页标题 / 说明 / 排序
 
 ## MCP
 
-`@rinova/playground-mcp` 把契约清单挂给 Claude Code / Cursor，提供 `capability_search`、`capability_get`、`scenario_list`、`coverage_report` 四个只读工具。仓库根的 `.mcp.json` 已配好，客户端打开本仓库即可直接用。
+`@rinova/playground-mcp` 把契约清单挂给 Cursor / Claude Code，提供 7 个**只读**工具：`capability_search`、`capability_get`、`scenario_list`、`coverage_report`、`env_get`、`scene_scaffold`、`scene_validate`。
+
+前提：项目里配了 `components`（可选 `modules`），并且跑过一次 `pnpm dev` 或 `pnpm build`，项目根下要有 `.playground/manifest.json`。
+
+```json
+{
+  "mcpServers": {
+    "rinova-playground": {
+      "command": "npx",
+      "args": ["-y", "@rinova/playground-mcp"]
+    }
+  }
+}
+```
+
+- **不锁版本、不传 `--project`**：默认按客户端进程的当前目录找 `.playground/manifest.json`，找不到就向上找 6 层（客户端常常从包子目录启动）
+- 项目不在当前目录（monorepo 多包、服务从别处启动）时再加 `--project <项目根>`，或用 `--manifest <.playground/manifest.json 的绝对路径>` 直接指定
+- Cursor：项目级 `.cursor/mcp.json`，或全局 `~/.cursor/mcp.json`
+- Claude Code：项目根 `.mcp.json`，或 `claude mcp add rinova-playground -- npx -y @rinova/playground-mcp`
+- 清单是构建产物：dev server 重算后，正在跑的 MCP 会话会在**下一次工具调用**时自动重读（比对 mtime + size），不用重启客户端
+- 开发框架本身时用本地 dist，避免 npx 拉到线上旧包：本仓库根的 `.mcp.json` 就是这么配的
 
 ## 文档
 

@@ -1,6 +1,6 @@
 {
   "name": "@rinova/playground-vite",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "rinova-playground 的 Vite 插件：扫描 scenes 目录并生成虚拟模块",
   "type": "module",
   "license": "MIT",

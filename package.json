@@ -17,7 +17,9 @@
     "build:docs": "pnpm --filter @rinova/example-docs build",
     "mcp": "node packages/playground-mcp/dist/index.js --project examples/minimal-lib",
     "verify:mcp": "node --experimental-strip-types scripts/probe-mcp.ts",
-    "verify:loop": "node --experimental-strip-types scripts/probe-author-loop.ts"
+    "verify:loop": "node --experimental-strip-types scripts/probe-author-loop.ts",
+    "verify:mcp:reload": "node --experimental-strip-types scripts/probe-mcp-reload.ts",
+    "verify:mcp:edge": "node --experimental-strip-types scripts/probe-mcp-edge.ts"
   },
   "engines": {
     "node": ">=22.12"
