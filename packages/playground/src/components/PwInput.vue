@@ -53,7 +53,8 @@ defineExpose({ focus: () => inputRef.value?.focus() })
       v-if="clearable && modelValue"
       class="pw-input__clear"
       type="button"
-      title="清空"
+      data-tip="清空"
+      aria-label="清空"
       @click="clear"
     >
       ×

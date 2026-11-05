@@ -164,6 +164,7 @@ onBeforeUnmount(() => clearHits())
 .pw-code {
   height: 100%;
   overflow: auto;
+  .pw-scrollbar();
   font-family: var(--rp-font-mono);
   font-size: 12.5px;
   line-height: 1.65;

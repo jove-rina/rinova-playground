@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { Share2 } from '@lucide/vue'
 import CodeBlock from '../code/CodeBlock.vue'
+import { copyText } from '../code/clipboard'
+import { toast } from '../components/toast'
 import PwApiBrief from '../components/PwApiBrief.vue'
 import PlaygroundSceneArgs from './PlaygroundSceneArgs.vue'
 import PlaygroundSceneSource from './PlaygroundSceneSource.vue'
@@ -32,6 +35,15 @@ const fileName = computed(() => props.scene.rel.split('/').pop() ?? props.scene.
  * 由插件在扫描时定好（Markdown 场景恒为 true，`.vue` 页看 pageMeta.doc），运行时不再猜。
  */
 const isDoc = computed(() => props.scene.doc)
+
+/** 分享：把地址栏 hash 同步成这个场景，再复制「当前页地址 + 锚点」 */
+const share = async (): Promise<void> => {
+  emit('focus', props.scene.name)
+  const { origin, pathname, search } = window.location
+  const url = `${origin}${pathname}${search}#${encodeURIComponent(props.scene.name)}`
+  const ok = await copyText(url)
+  toast(ok ? '已复制场景链接' : '复制失败，请手动复制地址')
+}
 
 /** 演示画布主题：默认浅色，'auto' 跟随外壳；组件不一定支持暗色 */
 const stageTheme = computed<'light' | 'dark'>(() => {
@@ -120,6 +132,14 @@ defineExpose({ mount })
           <span class="pw-scene__hash" aria-hidden="true">#</span>{{ scene.title }}
         </a>
       </h2>
+
+      <div class="pw-scene__actions">
+        <button type="button" class="pw-scene__action" :data-tip="`复制「${scene.title}」的链接`"
+          aria-label="复制场景链接" @click="share">
+          <Share2 :size="12" :stroke-width="2" />
+          <span>分享</span>
+        </button>
+      </div>
     </header>
 
     <p v-if="scene.description" class="pw-scene__desc">{{ scene.description }}</p>
@@ -196,8 +216,18 @@ defineExpose({ mount })
     transition: color 0.15s ease;
   }
 
+  /* 贴着标题，不再顶到行最右；默认隐藏，鼠标进到场景或键盘聚焦时再出现 */
   &__actions {
-    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  &:hover &__actions,
+  &__actions:focus-within {
+    opacity: 1;
   }
 
   &__action {
@@ -209,6 +239,7 @@ defineExpose({ mount })
     border-radius: 6px;
     background: transparent;
     color: var(--rp-color-text-muted);
+    font: inherit;
     font-size: 11.5px;
     cursor: pointer;
     transition: color 0.15s ease, border-color 0.15s ease;

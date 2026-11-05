@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
+  ChevronRight,
   Maximize,
   Monitor,
   Moon,
@@ -26,6 +27,8 @@ import { CUSTOM_WIDTH, clampWidth, resolveViewport, VIEWPORT_PRESETS, type Viewp
 const props = defineProps<{
   page: PageDescriptor
   scenes: SceneDescriptor[]
+  /** 首次渲染要落在哪个场景（切页 / 从全局搜索跳进来时用），空则第一个 */
+  initialActive?: string
   viewport: ViewportState
   theme: 'light' | 'dark'
   sidebarOpen: boolean
@@ -49,7 +52,12 @@ const toggleIndex = (): void => {
 }
 
 const scrollEl = ref<HTMLElement | null>(null)
-const active = ref(props.scenes[0]?.name ?? '')
+const initialScene = (): string => {
+  const fallback = props.scenes[0]?.name ?? ''
+  const wanted = props.initialActive
+  return wanted && props.scenes.some((scene) => scene.name === wanted) ? wanted : fallback
+}
+const active = ref(initialScene())
 
 /** 场景视图 / API 视图 */
 const view = ref<'scenes' | 'api'>('scenes')
@@ -182,15 +190,17 @@ const jump = async (name: string): Promise<void> => {
 
 watch(active, () => nextTick(onScroll))
 
+defineExpose({ jumpTo: jump })
+
 onMounted(() => {
-  if (window.location.hash) {
-    const name = decodeURIComponent(window.location.hash.replace(/^#/, ''))
-    if (props.scenes.some((scene) => scene.name === name)) {
-      active.value = name
-      emit('update:active', name)
-      nextTick(() => document.getElementById(name)?.scrollIntoView({ block: 'start' }))
-    }
-  }
+  const hash = decodeURIComponent(window.location.hash.replace(/^#/, ''))
+  const hashed = hash && props.scenes.some((scene) => scene.name === hash) ? hash : ''
+  const wanted = hashed || active.value
+  // 首屏就落在非第一个场景（深链 / 从全局搜索跳进来）：挂载后滚过去
+  if (!wanted || wanted === props.scenes[0]?.name) return
+  active.value = wanted
+  emit('update:active', wanted)
+  nextTick(() => jump(wanted))
 })
 </script>
 
@@ -200,19 +210,23 @@ onMounted(() => {
       <button
         type="button"
         class="pw-head-btn"
-        :title="sidebarOpen ? '收起侧栏（⌘.）' : '展开侧栏（⌘.）'"
+        :data-tip="sidebarOpen ? '收起侧栏' : '展开侧栏'"
+        :aria-label="sidebarOpen ? '收起侧栏' : '展开侧栏'"
         @click="emit('toggle-sidebar')"
       >
         <PanelLeftClose v-if="sidebarOpen" :size="14" />
         <PanelLeftOpen v-else :size="14" />
       </button>
 
-      <div class="pw-page__crumb">
-        <!-- 分组标签只在「页名 ≠ 组名」时出现，避免出现 Button Button 这种重复 -->
-        <span v-if="page.group !== page.title" class="pw-page__group">{{ page.group }}</span>
+      <!-- 面包屑：分组 › 页面，再单独隔一个竖线放场景数，读起来是「谁在谁下面」而不是一串词 -->
+      <nav class="pw-page__crumb" :title="`${page.group} › ${page.title}`" aria-label="当前页面位置">
+        <template v-if="page.group !== page.title">
+          <span class="pw-page__group">{{ page.group }}</span>
+          <ChevronRight :size="12" :stroke-width="2" class="pw-page__sep" aria-hidden="true" />
+        </template>
         <span class="pw-page__name">{{ page.title }}</span>
         <span class="pw-page__count">{{ visibleCount }} 个场景</span>
-      </div>
+      </nav>
 
       <div class="pw-page__actions">
         <div class="pw-view" role="tablist" aria-label="视图">
@@ -242,7 +256,8 @@ onMounted(() => {
             type="button"
             class="pw-width__btn"
             :class="{ 'is-active': viewport.id === item.id }"
-            :title="item.px ? `${item.label} ${item.px}px` : item.label"
+            :data-tip="item.px ? `${item.label} ${item.px}px` : item.label"
+            :aria-label="item.px ? `${item.label} ${item.px}px` : item.label"
             :aria-pressed="viewport.id === item.id"
             @click="pick(item.id)"
           >
@@ -252,7 +267,8 @@ onMounted(() => {
             type="button"
             class="pw-width__btn"
             :class="{ 'is-active': viewport.id === 'custom' }"
-            title="自定义宽度"
+            data-tip="自定义宽度"
+            aria-label="自定义宽度"
             :aria-pressed="viewport.id === 'custom'"
             @click="pick('custom')"
           >
@@ -273,7 +289,7 @@ onMounted(() => {
           </label>
         </div>
         <PlaygroundEditorPicker />
-        <button type="button" class="pw-head-btn" :title="theme === 'dark' ? '浅色' : '深色'" @click="emit('toggle-theme', $event)">
+        <button type="button" class="pw-head-btn" :data-tip="theme === 'dark' ? '切到浅色' : '切到深色'" :aria-label="theme === 'dark' ? '切到浅色' : '切到深色'" @click="emit('toggle-theme', $event)">
           <Moon v-if="theme === 'light'" :size="14" />
           <Sun v-else :size="14" />
         </button>
@@ -281,7 +297,8 @@ onMounted(() => {
           v-if="view === 'scenes'"
           type="button"
           class="pw-head-btn pw-head-btn--index"
-          :title="indexOpen ? '收起索引' : '展开索引'"
+          :data-tip="indexOpen ? '收起索引' : '展开索引'"
+          :aria-label="indexOpen ? '收起索引' : '展开索引'"
           :aria-pressed="indexOpen"
           @click="toggleIndex"
         >
@@ -345,6 +362,8 @@ onMounted(() => {
 </template>
 
 <style scoped lang="less">
+@import (reference) '../styles/mixins.less';
+
 .pw-page {
   display: flex;
   flex-direction: column;
@@ -384,14 +403,24 @@ onMounted(() => {
     line-height: 18px;
   }
 
+  /* 箭头把「哪个分组下的哪个页面」说出来；两侧 gap 已经 8px，箭头自身再收 2px */
+  &__sep {
+    flex: 0 0 auto;
+    margin: 0 -2px;
+    color: color-mix(in srgb, var(--rp-color-text-muted) 70%, transparent);
+  }
+
   &__name {
     font-weight: 600;
   }
 
+  /* 场景数是元信息，用一根竖线隔开，不再贴着标题读成「概览 2 个场景」 */
   &__count {
-    margin-left: 6px;
+    padding-left: 9px;
+    border-left: 1px solid var(--rp-color-border);
     color: var(--rp-color-text-muted);
     font-size: 11.5px;
+    line-height: 14px;
   }
 
   &__actions {
@@ -408,31 +437,7 @@ onMounted(() => {
     padding: 20px 24px 40px;
     /* 设备壳里的屏幕要有实底，否则外框底色会透上来 */
     background: var(--rp-color-bg);
-    /* 用 ::-webkit-scrollbar 自定义 6px 细条。注意别同时写 scrollbar-width /
-       scrollbar-color —— Chromium 里标准属性会覆盖 webkit 规则，滚动条会变成常驻粗条 */
-
-    &::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-
-    /* 闲置时透明，指针进到滚动区才显形：否则常驻的浅色条会和索引分隔线并成"双线" */
-    &::-webkit-scrollbar-thumb {
-      border-radius: 3px;
-      background: transparent;
-    }
-
-    &:hover::-webkit-scrollbar-thumb {
-      background: color-mix(in srgb, var(--rp-color-text-muted) 26%, transparent);
-    }
-
-    &:hover::-webkit-scrollbar-thumb:hover {
-      background: color-mix(in srgb, var(--rp-color-text-muted) 45%, transparent);
-    }
-
-    &::-webkit-scrollbar-track {
-      background: transparent;
-    }
+    .pw-scrollbar();
   }
 
   /**
@@ -572,9 +577,29 @@ onMounted(() => {
     border-left: 1px solid var(--rp-color-border);
 
     :deep(.pw-input) {
-      width: 78px;
-      border-color: transparent;
-      background: transparent;
+      width: 96px;
+      height: 24px;
+      padding: 0 4px;
+      /* 透明输入框配一个圆形清空按钮，读起来像散落的文字；给一层浅底和描边，值才看得清 */
+      border-color: color-mix(in srgb, var(--rp-color-text) 14%, transparent);
+      background: color-mix(in srgb, var(--rp-color-text) 7%, transparent);
+    }
+
+    :deep(.pw-input__field) {
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+
+      /* 数字步进箭头会占掉 3 位数需要的宽度，宽度值本身靠键盘输入，直接藏掉 */
+      &::-webkit-outer-spin-button,
+      &::-webkit-inner-spin-button {
+        margin: 0;
+        -webkit-appearance: none;
+      }
+
+      &[type='number'] {
+        -moz-appearance: textfield;
+        appearance: textfield;
+      }
     }
   }
 

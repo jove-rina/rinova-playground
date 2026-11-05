@@ -46,34 +46,15 @@ const groups = computed(() =>
 </template>
 
 <style scoped lang="less">
+@import (reference) '../styles/mixins.less';
+
 .pw-index {
   width: 100%;
   height: 100%;
   min-height: 0;
   overflow: auto;
   padding: 18px 14px 24px 18px;
-
-  &::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  /* 闲置时透明，指针进到面板才显形 */
-  &::-webkit-scrollbar-thumb {
-    border-radius: 3px;
-    background: transparent;
-  }
-
-  &:hover::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--rp-color-text-muted) 26%, transparent);
-  }
-
-  &:hover::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in srgb, var(--rp-color-text-muted) 45%, transparent);
-  }
-
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
+  .pw-scrollbar();
 
   &__inner {
     display: flex;

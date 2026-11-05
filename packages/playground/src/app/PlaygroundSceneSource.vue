@@ -8,6 +8,7 @@ import {
   ChevronUp,
   Copy,
   FileCode2,
+  FileSymlink,
   Search,
   SquareArrowOutUpRight,
   WholeWord,
@@ -28,6 +29,7 @@ const cache = new Map<string, string>()
 const codes = ref<Record<string, string>>({})
 const loading = ref(false)
 const copied = ref(false)
+const pathCopied = ref(false)
 
 const sources = computed(() => props.scene.sources)
 const active = computed(() => sources.value[activeIndex.value] ?? sources.value[0])
@@ -170,7 +172,12 @@ const selectTab = async (index: number): Promise<void> => {
 }
 
 const copy = async (): Promise<void> => {
-  if (!code.value) return
+  // 卡片折叠时源码还没读，先按需读一次再复制；不展开也不影响复制
+  if (!code.value && active.value) await load(active.value.rel)
+  if (!code.value) {
+    toast('复制失败：源码还没读到')
+    return
+  }
   const ok = await copyText(code.value)
   if (!ok) {
     toast('复制失败')
@@ -179,6 +186,13 @@ const copy = async (): Promise<void> => {
   copied.value = true
   toast(`已复制 ${fileName.value}`)
   window.setTimeout(() => (copied.value = false), 1500)
+}
+
+/** 复制当前 Tab 对应文件的绝对路径（没配 root 时退回仓库相对路径） */
+const copyFilePath = async (): Promise<void> => {
+  await copyPath(active.value?.rel ?? props.scene.rel)
+  pathCopied.value = true
+  window.setTimeout(() => (pathCopied.value = false), 1500)
 }
 </script>
 
@@ -198,25 +212,35 @@ const copy = async (): Promise<void> => {
           type="button"
           class="pw-source__action"
           :class="{ 'is-on': findOpen }"
-          title="在源码中搜索（⌘F）"
+          data-tip="在源码中搜索（⌘F）"
+          aria-label="在源码中搜索"
           @click="toggleFind"
         >
           <Search :size="14" />
         </button>
-        <button type="button" class="pw-source__action" :title="copied ? '已复制' : '复制源码'" @click="copy">
+        <button type="button" class="pw-source__action" :data-tip="copied ? '已复制源码' : '复制源码'"
+          aria-label="复制源码" @click="copy">
           <Check v-if="copied" :size="14" />
           <Copy v-else :size="14" />
+        </button>
+        <button
+          type="button"
+          class="pw-source__action"
+          :data-tip="pathCopied ? '已复制路径' : '复制文件路径'"
+          aria-label="复制文件路径"
+          @click="copyFilePath"
+        >
+          <Check v-if="pathCopied" :size="14" />
+          <FileSymlink v-else :size="14" :stroke-width="2" />
         </button>
         <button
           v-if="editorEnabled()"
           type="button"
           class="pw-source__action"
-          :title="`用 ${editorLabel()} 打开`"
+          :data-tip="`用 ${editorLabel()} 打开`"
+          :aria-label="`用 ${editorLabel()} 打开`"
           @click="openInEditor(active?.rel ?? scene.rel)"
         >
-          <SquareArrowOutUpRight :size="14" :stroke-width="2" />
-        </button>
-        <button v-else type="button" class="pw-source__action" title="复制文件路径" @click="copyPath(scene.rel)">
           <SquareArrowOutUpRight :size="14" :stroke-width="2" />
         </button>
       </div>
@@ -240,12 +264,13 @@ const copy = async (): Promise<void> => {
           type="button"
           class="pw-source__find-btn"
           :disabled="!total"
-          title="上一个匹配（Shift+Enter）"
+          data-tip="上一个匹配（Shift+Enter）"
+          aria-label="上一个匹配"
           @click="step(-1)"
         >
           <ChevronUp :size="14" />
         </button>
-        <button type="button" class="pw-source__find-btn" :disabled="!total" title="下一个匹配（Enter）" @click="step(1)">
+        <button type="button" class="pw-source__find-btn" :disabled="!total" data-tip="下一个匹配（Enter）" aria-label="下一个匹配" @click="step(1)">
           <ChevronDown :size="14" />
         </button>
         <button
@@ -253,7 +278,8 @@ const copy = async (): Promise<void> => {
           class="pw-source__find-btn"
           :class="{ 'is-on': caseSensitive }"
           :aria-pressed="caseSensitive"
-          title="区分大小写"
+          data-tip="区分大小写"
+          aria-label="区分大小写"
           @click="caseSensitive = !caseSensitive"
         >
           <CaseSensitive :size="14" />
@@ -263,12 +289,13 @@ const copy = async (): Promise<void> => {
           class="pw-source__find-btn"
           :class="{ 'is-on': wholeWord }"
           :aria-pressed="wholeWord"
-          title="全词匹配"
+          data-tip="全词匹配"
+          aria-label="全词匹配"
           @click="wholeWord = !wholeWord"
         >
           <WholeWord :size="14" />
         </button>
-        <button type="button" class="pw-source__find-btn" title="关闭搜索（Esc）" @click="closeFind">
+        <button type="button" class="pw-source__find-btn" data-tip="关闭搜索（Esc）" aria-label="关闭搜索" @click="closeFind">
           <X :size="14" />
         </button>
       </div>
@@ -305,6 +332,8 @@ const copy = async (): Promise<void> => {
 </template>
 
 <style scoped lang="less">
+@import (reference) '../styles/mixins.less';
+
 .pw-source {
   display: flex;
   flex-direction: column;
@@ -489,6 +518,7 @@ const copy = async (): Promise<void> => {
   &__code {
     max-height: 420px;
     overflow: auto;
+    .pw-scrollbar();
     counter-reset: pw-line;
 
     :deep(.line) {

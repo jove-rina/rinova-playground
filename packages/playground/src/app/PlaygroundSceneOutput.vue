@@ -68,6 +68,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped lang="less">
+@import (reference) '../styles/mixins.less';
+
 .pw-output {
   display: flex;
   flex-direction: column;
@@ -120,6 +122,7 @@ onBeforeUnmount(() => {
   &__body {
     max-height: 260px;
     overflow: auto;
+    .pw-scrollbar();
   }
 }
 </style>

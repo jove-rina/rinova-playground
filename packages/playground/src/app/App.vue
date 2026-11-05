@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect
 import config from 'virtual:playground/config'
 import { pages, scenes } from 'virtual:playground/scenes'
 import PwToastHost from '../components/PwToastHost.vue'
+import PwTooltip from '../components/PwTooltip.vue'
 import { currentOutputSlots } from '../payload/output'
 import '../styles/theme.less'
 import PlaygroundPage from './PlaygroundPage.vue'
@@ -102,9 +103,23 @@ const activeScene = computed(
 
 
 
-const sidebarRef = ref<InstanceType<typeof PlaygroundSidebar> | null>(null)
+const pageRef = ref<InstanceType<typeof PlaygroundPage> | null>(null)
 
-/** 左侧栏展开 / 收起，存 localStorage；⌘/Ctrl + . 也可切换 */
+/**
+ * 从全局搜索点一个场景：同页直接滚过去；跨页先记下要落到的场景，
+ * 切页的 watch 会把它当作初始场景，页面挂载后再由 PlaygroundPage 滚到位置。
+ */
+const pendingScene = ref('')
+const jumpToScene = (pageId: string, sceneName: string): void => {
+  if (pageId === activePageId.value) {
+    pageRef.value?.jumpTo(sceneName)
+    return
+  }
+  pendingScene.value = sceneName
+  activePageId.value = pageId
+}
+
+/** 左侧栏展开 / 收起，存 localStorage */
 const readSidebarOpen = (): boolean => localStorage.getItem(SIDEBAR_KEY) !== '0'
 const sidebarOpen = ref(readSidebarOpen())
 const toggleSidebar = (): void => {
@@ -223,33 +238,19 @@ const writeLocation = (): void => {
   }
 }
 
-/** 切换页时重置到该页第一个场景 */
+/** 切换页时重置到该页第一个场景（从搜索跳进来时落到指定场景） */
 watch(activePageId, (id) => {
   writeLocation()
   const list = scenesOfPage(id)
-  activeSceneName.value = list[0]?.name ?? ''
+  const target = pendingScene.value && list.some((scene) => scene.name === pendingScene.value) ? pendingScene.value : ''
+  pendingScene.value = ''
+  activeSceneName.value = target || list[0]?.name || ''
   window.history.replaceState(null, '', `${basePath}${id}`)
 })
 
 const focusScene = (name: string): void => {
   activeSceneName.value = name
   window.history.replaceState(null, '', `${basePath}${activePageId.value}#${name}`)
-}
-
-/* ---------------- 快捷键 ---------------- */
-
-const onKeydown = (event: KeyboardEvent): void => {
-  const meta = event.metaKey || event.ctrlKey
-  if (meta && event.key.toLowerCase() === 'k') {
-    event.preventDefault()
-    sidebarRef.value?.focusSearch()
-    return
-  }
-  if (meta && event.key === '.') {
-    event.preventDefault()
-    toggleSidebar()
-    return
-  }
 }
 
 /* ---------------- 生命周期 ---------------- */
@@ -270,14 +271,12 @@ onMounted(() => {
   }
   window.addEventListener('popstate', readLocation)
   window.addEventListener('hashchange', readLocation)
-  window.addEventListener('keydown', onKeydown)
 })
 
 onBeforeUnmount(() => {
   media.removeEventListener('change', onMediaChange)
   window.removeEventListener('popstate', readLocation)
   window.removeEventListener('hashchange', readLocation)
-  window.removeEventListener('keydown', onKeydown)
 })
 </script>
 
@@ -285,13 +284,13 @@ onBeforeUnmount(() => {
   <div class="pw-app" :class="{ 'is-sidebar-collapsed': !sidebarOpen }">
     <PlaygroundSidebar
       v-show="sidebarOpen"
-      ref="sidebarRef"
       :title="title"
       :groups="pageGroups"
+      :scenes="scenes"
       :active-page-id="activePageId"
       :scene-count="visibleCount"
       @select="activePageId = $event"
-      @collapse="toggleSidebar"
+      @select-scene="jumpToScene"
     />
 
     <main class="pw-main">
@@ -299,8 +298,10 @@ onBeforeUnmount(() => {
       <template v-if="activePage">
         <PlaygroundPage
           :key="activePage.id"
+          ref="pageRef"
           :page="activePage"
           :scenes="activeScenes"
+          :initial-active="activeSceneName"
           :viewport="viewport"
           :theme="theme"
           :sidebar-open="sidebarOpen"
@@ -320,6 +321,7 @@ onBeforeUnmount(() => {
     </main>
 
     <PwToastHost />
+    <PwTooltip />
   </div>
 </template>
 

@@ -160,11 +160,11 @@ export const openInEditor = (rel: string, line = 1): void => {
   }
 }
 
-/** 复制「文件:行」，给没有 IDE 或路径失效的场景兜底 */
-export const copyPath = async (rel: string, line = 1): Promise<void> => {
+/** 复制文件路径：`line > 0` 时带「:行」，不传就是纯路径 */
+export const copyPath = async (rel: string, line = 0): Promise<void> => {
   const root = projectRoot()
-  const abs = root ? `${root.replace(/\/+$/, '')}/${rel}` : rel
-  const text = `${abs}:${line}`
+  const abs = root ? `${root.replace(/\/+$/, '')}/${rel.replace(/^\.?\//, '')}` : rel
+  const text = line > 0 ? `${abs}:${line}` : abs
   const ok = await copyText(text)
   toast(ok ? `已复制 ${text}` : '复制失败，请手动复制路径')
 }

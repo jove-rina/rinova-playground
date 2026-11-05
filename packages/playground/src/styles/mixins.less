@@ -11,3 +11,38 @@
   outline: 2px solid color-mix(in srgb, var(--rp-color-primary) 55%, transparent);
   outline-offset: @offset;
 }
+
+/**
+ * 全站细滚动条，只给框架自己的滚动容器用（侧栏、页面、索引、源码/输出面板）。
+ * 演示画布里的组件保持原生滚动条——那里是给别人演示的真实界面，不该被动过。
+ * 只写 ::-webkit-scrollbar：同时写 scrollbar-width / scrollbar-color 会让 Chromium
+ * 走标准属性，这里所有规则全部失效，滚动条变回常驻粗条。
+ */
+.pw-scrollbar(@size: 6px) {
+  &::-webkit-scrollbar {
+    width: @size;
+    height: @size;
+  }
+
+  &::-webkit-scrollbar-track,
+  &::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-button {
+    display: none;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--rp-color-text-muted) 16%, transparent);
+  }
+
+  &:hover::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--rp-color-text-muted) 34%, transparent);
+  }
+
+  &:hover::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--rp-color-text-muted) 56%, transparent);
+  }
+}

@@ -268,6 +268,8 @@ const copyType = async (text: string): Promise<void> => {
 </template>
 
 <style scoped lang="less">
+@import (reference) '../styles/mixins.less';
+
 .pw-api {
   display: flex;
   flex-direction: column;
@@ -291,6 +293,7 @@ const copyType = async (text: string): Promise<void> => {
     min-height: 0;
     overflow: auto;
     padding: 14px 24px 32px;
+    .pw-scrollbar();
   }
 
   &__title {

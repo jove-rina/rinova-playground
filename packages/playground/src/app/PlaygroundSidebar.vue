@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { ChevronRight, PanelLeftClose, Search } from '@lucide/vue'
+import { ChevronRight, Search } from '@lucide/vue'
 import PwInput from '../components/PwInput.vue'
+import type { SceneDescriptor } from '../types'
 
 interface NavPage {
   id: string
@@ -22,24 +23,19 @@ const props = defineProps<{
   groups: NavGroup[]
   activePageId: string
   sceneCount: number
+  /** 全站场景：搜索是全局的，页面之外还要能直接搜到场景 */
+  scenes: SceneDescriptor[]
 }>()
 
-const emit = defineEmits<{ select: [id: string]; collapse: [] }>()
+const emit = defineEmits<{ select: [id: string]; selectScene: [pageId: string, sceneName: string] }>()
 
 const query = ref('')
-const inputRef = ref<InstanceType<typeof PwInput> | null>(null)
 const navRef = ref<HTMLElement | null>(null)
 
 /** 分组展开状态：默认只展开活动页所在的那个组（没有活动页时展开第一个组） */
 const expandedGroups = ref<Set<string>>(new Set())
 /** 带子组件的组件页展开状态 */
 const expandedPages = ref<Set<string>>(new Set())
-
-const focusSearch = (): void => {
-  inputRef.value?.focus()
-}
-
-defineExpose({ focusSearch })
 
 const searching = computed(() => query.value.trim() !== '')
 
@@ -152,29 +148,92 @@ const pageCount = computed(() =>
   props.groups.reduce((sum, group) => sum + group.pages.reduce((inner, page) => inner + 1 + page.children.length, 0), 0)
 )
 
-const visibleItems = (): HTMLButtonElement[] =>
-  [...(navRef.value?.querySelectorAll<HTMLButtonElement>('.pw-nav-item') ?? [])].filter((el) => el.offsetParent !== null)
+/* ---------------- 全局搜索：页面 + 场景 ---------------- */
 
-/** 键盘浏览：↑ / ↓ 在可见页项间移动，Home / End 到首尾，Enter 交给原生 button */
-const onNavKeydown = (event: KeyboardEvent): void => {
-  if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Home' && event.key !== 'End') return
-  const items = visibleItems()
-  if (!items.length) return
-  event.preventDefault()
-  const index = items.indexOf(document.activeElement as HTMLButtonElement)
-  if (event.key === 'Home') {
-    items[0]?.focus()
-    return
-  }
-  if (event.key === 'End') {
-    items[items.length - 1]?.focus()
-    return
-  }
-  const step = event.key === 'ArrowDown' ? 1 : -1
-  items[index < 0 ? 0 : (index + step + items.length) % items.length]?.focus()
+interface SearchHit {
+  key: string
+  kind: 'page' | 'scene'
+  title: string
+  /** 副行：页面给分组，场景给「分组 · 页面」，说明这一条是什么位置 */
+  meta: string
+  pageId: string
+  /** 场景命中才有；有值时点击直接落到该场景 */
+  sceneName?: string
+  /** 命中的是场景里的 API 名时的说明，否则用户看不出为什么搜到这一条 */
+  reason?: string
 }
 
-/** 搜索框的键盘约定：Enter 进第一条命中，↓ 把焦点交给列表，Esc 先清空再退出 */
+/** 场景命中一次最多列这么多，剩下的用一句话提示收窄范围 */
+const SCENE_HIT_LIMIT = 50
+
+const needle = computed(() => query.value.trim().toLowerCase())
+
+const hitContains = (text: string | null | undefined, q: string): boolean =>
+  typeof text === 'string' && text.toLowerCase().includes(q)
+
+/** 页面命中：页标题 / 页 id / 分组名 */
+const pageHits = computed<SearchHit[]>(() => {
+  const q = needle.value
+  if (!q) return []
+  return props.groups.flatMap((group) =>
+    group.pages
+      .filter((page) => hitContains(page.title, q) || hitContains(page.id, q) || hitContains(group.name, q))
+      .map((page) => ({
+        key: `page:${page.id}`,
+        kind: 'page' as const,
+        title: page.title,
+        meta: `${group.name} · ${page.count + page.children.reduce((sum, child) => sum + child.count, 0)} 个场景`,
+        pageId: page.id,
+      }))
+  )
+})
+
+/** 场景命中：场景标题 / 文件名 / 路径 / 说明 / 标签 / 覆盖的 API 名；隐藏场景不参与 */
+const sceneHitList = computed<SearchHit[]>(() => {
+  const q = needle.value
+  if (!q) return []
+  return props.scenes
+    .filter((scene) => !scene.hidden)
+    .filter(
+      (scene) =>
+        hitContains(scene.title, q) ||
+        hitContains(scene.name, q) ||
+        hitContains(scene.rel, q) ||
+        hitContains(scene.description, q) ||
+        (scene.api ?? []).some((name) => hitContains(name, q)) ||
+        (scene.tags ?? []).some((tag) => hitContains(tag, q))
+    )
+    .map((scene) => {
+      const apiHit = (scene.api ?? []).find((name) => hitContains(name, q))
+      return {
+        key: `scene:${scene.id}`,
+        kind: 'scene' as const,
+        title: scene.title,
+        meta: `${scene.group} · ${scene.page}`,
+        pageId: scene.pageId,
+        sceneName: scene.name,
+        reason: apiHit ? `覆盖 ${apiHit}` : undefined,
+      }
+    })
+})
+
+const sceneHits = computed<SearchHit[]>(() => sceneHitList.value.slice(0, SCENE_HIT_LIMIT))
+
+const sceneHitRest = computed(() => Math.max(0, sceneHitList.value.length - sceneHits.value.length))
+
+/** 点命中项：页面直接切页，场景交给 App 切页后再滚到那一个场景 */
+const openHit = (hit: SearchHit): void => {
+  if (hit.sceneName) emit('selectScene', hit.pageId, hit.sceneName)
+  else emit('select', hit.pageId)
+  query.value = ''
+}
+
+const visibleItems = (): HTMLButtonElement[] =>
+  [...(navRef.value?.querySelectorAll<HTMLButtonElement>('.pw-nav-item, .pw-hit') ?? [])].filter(
+    (el) => el.offsetParent !== null
+  )
+
+/** 搜索框：Enter 直接进第一条命中，Esc 先清空再退出 */
 const onSearchKeydown = (event: KeyboardEvent): void => {
   if (event.key === 'Enter') {
     const first = visibleItems()[0]
@@ -182,11 +241,6 @@ const onSearchKeydown = (event: KeyboardEvent): void => {
       event.preventDefault()
       first.click()
     }
-    return
-  }
-  if (event.key === 'ArrowDown') {
-    event.preventDefault()
-    visibleItems()[0]?.focus()
     return
   }
   if (event.key !== 'Escape') return
@@ -214,24 +268,69 @@ watch(
     <div class="pw-sidebar__brand">
       <span class="pw-sidebar__logo" aria-hidden="true" />
       <span class="pw-sidebar__title">{{ title }}</span>
-      <button type="button" class="pw-sidebar__collapse" title="收起侧栏（⌘.）" @click="emit('collapse')">
-        <PanelLeftClose :size="13" />
-      </button>
     </div>
 
     <div class="pw-sidebar__search">
-      <PwInput ref="inputRef" v-model="query" size="sm" placeholder="搜索页面" @keydown="onSearchKeydown">
+      <PwInput v-model="query" size="sm" placeholder="搜索页面 / 场景" @keydown="onSearchKeydown">
         <template #prefix>
           <Search :size="13" class="pw-sidebar__search-icon" />
-        </template>
-        <template v-if="!query" #suffix>
-          <kbd class="pw-sidebar__kbd">⌘K</kbd>
         </template>
       </PwInput>
     </div>
 
-    <nav ref="navRef" class="pw-sidebar__nav" aria-label="组件页列表" @keydown="onNavKeydown">
-      <section v-for="group in filteredGroups" :key="group.name" class="pw-nav-group">
+    <nav ref="navRef" class="pw-sidebar__nav" aria-label="组件页列表">
+      <!-- 搜索是全局的：页面命中 + 场景命中，点场景直接落到那个场景，而不是只过滤左侧目录 -->
+      <div v-if="searching" class="pw-hits">
+        <section v-if="pageHits.length" class="pw-hits__group">
+          <p class="pw-hits__label">页面<span class="pw-hits__count">{{ pageHits.length }}</span></p>
+          <button
+            v-for="hit in pageHits"
+            :key="hit.key"
+            type="button"
+            class="pw-hit"
+            :title="`${hit.meta} · ${hit.title}`"
+            @click="openHit(hit)"
+          >
+            <span class="pw-hit__title">
+              <template v-for="(part, index) in splitMatch(hit.title)" :key="index">
+                <mark v-if="part.hit" class="pw-nav__hit">{{ part.text }}</mark>
+                <template v-else>{{ part.text }}</template>
+              </template>
+            </span>
+            <span class="pw-hit__meta">{{ hit.meta }}</span>
+          </button>
+        </section>
+
+        <section v-if="sceneHits.length" class="pw-hits__group">
+          <p class="pw-hits__label">场景<span class="pw-hits__count">{{ sceneHitList.length }}</span></p>
+          <button
+            v-for="hit in sceneHits"
+            :key="hit.key"
+            type="button"
+            class="pw-hit"
+            :title="`${hit.meta} · ${hit.title}${hit.reason ? ` · ${hit.reason}` : ''}`"
+            @click="openHit(hit)"
+          >
+            <span class="pw-hit__title">
+              <template v-for="(part, index) in splitMatch(hit.title)" :key="index">
+                <mark v-if="part.hit" class="pw-nav__hit">{{ part.text }}</mark>
+                <template v-else>{{ part.text }}</template>
+              </template>
+            </span>
+            <span class="pw-hit__meta">
+              <span class="pw-hit__meta-text">{{ hit.meta }}</span>
+              <em v-if="hit.reason" class="pw-hit__reason">{{ hit.reason }}</em>
+            </span>
+          </button>
+          <p v-if="sceneHitRest" class="pw-hits__more">还有 {{ sceneHitRest }} 条场景命中，多输几个字缩小范围</p>
+        </section>
+
+        <p v-if="!pageHits.length && !sceneHits.length" class="pw-sidebar__empty">
+          没有匹配「{{ query.trim() }}」<kbd class="pw-sidebar__kbd">Esc</kbd> 清空
+        </p>
+      </div>
+
+      <section v-for="group in filteredGroups" v-show="!searching" :key="group.name" class="pw-nav-group">
         <button
           type="button"
           class="pw-nav-group__title"
@@ -277,7 +376,7 @@ watch(
                 class="pw-nav-toggle"
                 :aria-expanded="pageExpanded(page.id)"
                 :aria-label="`${pageExpanded(page.id) ? '收起' : '展开'} ${page.title} 的子组件`"
-                :title="pageExpanded(page.id) ? `收起 ${page.title} 的子组件` : `展开 ${page.title} 的子组件`"
+                :data-tip="pageExpanded(page.id) ? `收起 ${page.title} 的子组件` : `展开 ${page.title} 的子组件`"
                 @click="togglePage(page.id)"
               >
                 <ChevronRight :size="12" :class="{ 'is-open': pageExpanded(page.id) }" />
@@ -307,12 +406,11 @@ watch(
         </div>
       </section>
 
-      <p v-if="!filteredGroups.length" class="pw-sidebar__empty">没有匹配的页面<kbd class="pw-sidebar__kbd">Esc</kbd> 清空</p>
+      <p v-if="!searching && !filteredGroups.length" class="pw-sidebar__empty">没有匹配的页面<kbd class="pw-sidebar__kbd">Esc</kbd> 清空</p>
     </nav>
 
     <footer class="pw-sidebar__footer">
       <span>{{ pageCount }} 个页面 · {{ sceneCount }} 个场景</span>
-      <kbd class="pw-sidebar__kbd">⌘.</kbd>
     </footer>
   </aside>
 </template>
@@ -356,29 +454,6 @@ watch(
   white-space: nowrap;
 }
 
-.pw-sidebar__collapse {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin-left: auto;
-  padding: 0;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--rp-color-text-muted);
-  cursor: pointer;
-
-  &:hover {
-    background: color-mix(in srgb, var(--rp-color-text-muted) 12%, transparent);
-    color: var(--rp-color-text);
-  }
-
-  &:focus-visible {
-    .pw-focus-ring(-2px);
-  }
-}
 
 .pw-sidebar__search {
   /* 与品牌 logo、分组标题同一条 16px 导轨 */
@@ -405,28 +480,10 @@ watch(
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  /* 覆盖式滚动条不压正文 */
+  /* 滚动条出现/消失时列表不横向跳动 */
   scrollbar-gutter: stable;
   padding: 4px 16px 16px;
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--rp-color-text-muted) 26%, transparent) transparent;
-
-  &::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    border-radius: 3px;
-    background: color-mix(in srgb, var(--rp-color-text-muted) 26%, transparent);
-  }
-
-  &::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in srgb, var(--rp-color-text-muted) 45%, transparent);
-  }
-
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
+  .pw-scrollbar();
 }
 
 .pw-nav-group + .pw-nav-group {
@@ -557,7 +614,21 @@ watch(
   }
 
   &.is-child {
+    position: relative;
     font-size: 12.5px;
+
+    /* 只有当前这一项对应的那一小段竖线用品牌色（线在 x=12，子项盒子从 16 起，所以 -4px）；
+       整条线保持中性，否则看着像「这一组全被选中了」 */
+    &.is-active::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: -4px;
+      width: 2px;
+      border-radius: 2px;
+      background: var(--rp-color-primary);
+    }
   }
 }
 
@@ -643,11 +714,103 @@ watch(
     border-radius: 2px;
     background: color-mix(in srgb, var(--rp-color-text-muted) 16%, transparent);
   }
+}
 
-  /* 当前页就在这一组里时，竖线跟着用品牌色，位置一眼可辨 */
-  &:has(.is-active)::before {
-    background: color-mix(in srgb, var(--rp-color-primary) 45%, transparent);
+/* 全局搜索结果：页面 / 场景两段，每条两行（标题 + 位置），点场景直接跳过去 */
+.pw-hits {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 2px 0 10px;
+}
+
+.pw-hits__group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.pw-hits__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 2px 3px;
+  padding: 0 6px;
+  color: var(--rp-color-text-muted);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+}
+
+.pw-hits__count {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+.pw-hits__more {
+  margin: 4px 2px 0;
+  padding: 0 6px;
+  color: var(--rp-color-text-muted);
+  font-size: 10.5px;
+  line-height: 1.6;
+}
+
+.pw-hit {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--rp-color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    background: color-mix(in srgb, var(--rp-color-text-muted) 10%, transparent);
   }
+
+  &:focus-visible {
+    .pw-focus-ring(-2px);
+  }
+}
+
+.pw-hit__title {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pw-hit__meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--rp-color-text-muted);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.pw-hit__meta-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pw-hit__reason {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--rp-color-primary) 14%, transparent);
+  color: var(--rp-color-primary);
+  font-style: normal;
 }
 
 .pw-sidebar__empty {

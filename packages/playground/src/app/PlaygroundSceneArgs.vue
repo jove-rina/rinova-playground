@@ -58,7 +58,8 @@ const resetSlot = (binding: SceneArgsBinding): void => {
         v-if="!multiSlot && slots[0]"
         type="button"
         class="pw-args__reset"
-        title="恢复默认值"
+        data-tip="恢复默认值"
+        aria-label="恢复默认值"
         @click="resetSlot(slots[0])"
       >
         <RotateCcw :size="12" />
@@ -68,7 +69,7 @@ const resetSlot = (binding: SceneArgsBinding): void => {
     <section v-for="binding in slots" :key="`${binding.sceneId}:${binding.key}`" class="pw-args__slot">
       <header v-if="multiSlot" class="pw-args__slot-head">
         <span class="pw-args__slot-name">{{ binding.label || binding.key }}</span>
-        <button type="button" class="pw-args__reset" title="只恢复这一块" @click="resetSlot(binding)">
+        <button type="button" class="pw-args__reset" data-tip="只恢复这一块" aria-label="只恢复这一块" @click="resetSlot(binding)">
           <RotateCcw :size="12" />
         </button>
       </header>

@@ -12,11 +12,10 @@ import Prose from '../../../components/Prose.vue'
 </script>
 
 <template>
-  <Prose title="快捷键" lead="四个键就够用。">
+  <Prose title="快捷键" lead="只剩源码卡里的这两个键。">
     <table>
       <thead><tr><th>快捷键</th><th>作用</th></tr></thead>
       <tbody>
-        <tr><td><code>⌘K</code> / <code>Ctrl+K</code></td><td>聚焦场景搜索</td></tr>
         <tr><td><code>⌘F</code> / <code>Ctrl+F</code></td><td>代码面板内查找</td></tr>
         <tr><td><code>Esc</code></td><td>关闭代码面板</td></tr>
       </tbody>
