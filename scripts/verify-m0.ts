@@ -879,6 +879,25 @@ record(
     : `${sortCases.length} 条用例通过`
 )
 
+/* 12.6 MPA 第二入口的 dev 回落：只拦「页面请求」，别把静态资源 / 非 HTML 请求改写成入口 */
+const { createEntryFallbackMatcher } = await import('../packages/playground-vite/src/entry-fallback.ts')
+const entryMatches = createEntryFallbackMatcher('/_playground/')
+const entryCases: Array<{ label: string; got: boolean; want: boolean }> = [
+  { label: '根路径 /_playground', got: entryMatches('/_playground'), want: true },
+  { label: '多级路由', got: entryMatches('/_playground/tao-form/form', 'GET', 'text/html'), want: true },
+  { label: '带查询串的页面请求', got: entryMatches('/_playground/a/b?tab=api', 'GET', 'text/html'), want: true },
+  { label: '带扩展名的是静态资源', got: entryMatches('/_playground/logo.png', 'GET', 'text/html'), want: false },
+  { label: 'POST 不回落', got: entryMatches('/_playground/a', 'POST', 'text/html'), want: false },
+  { label: 'JSON 请求不回落', got: entryMatches('/_playground/a', 'GET', 'application/json'), want: false },
+  { label: '前缀相近的路径不命中', got: entryMatches('/_playground-other'), want: false },
+]
+const entryBad = entryCases.filter((item) => item.got !== item.want)
+record(
+  'MPA 入口回落匹配器（页面请求才改写，静态资源 / 非 HTML 放过）',
+  entryBad.length === 0,
+  entryBad.length ? entryBad.map((item) => `${item.label}: ${item.got}≠${item.want}`).join('; ') : `${entryCases.length} 条用例通过`
+)
+
 /* 13. 契约清单 glob：`**\/` 必须能匹配任意层目录（真实项目组件常在 Xxx/src/components/ 三层） */
 const { globToRegExp } = await import('../packages/playground-vite/src/manifest.ts')
 const globCases: Array<[pattern: string, file: string, expected: boolean]> = [

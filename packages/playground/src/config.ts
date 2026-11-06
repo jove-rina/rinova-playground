@@ -29,6 +29,12 @@ export interface PlaygroundConfig {
    * 不配时回落 base ?? '/'。
    */
   routeBase?: string
+  /**
+   * MPA 第二入口的 HTML（默认 `playground/index.html`）。
+   * 配了 `routeBase` 时，dev server 会把 `<routeBase>/...` 这类「History 路由」的页面请求回落到它；
+   * 生产环境仍需在网关写等价规则（nginx: `try_files $uri /playground/index.html`）。
+   */
+  entry?: string
   /** dev server 端口 */
   port?: number
   /** 契约清单要扫描的组件 glob（如 src/components 下所有 .vue）；不配则不生成 manifest */

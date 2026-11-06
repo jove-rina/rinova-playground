@@ -8,7 +8,13 @@ import { buildModules } from './module-api.js'
 import { resolvePluginSpecifier } from './plugin-spec.js'
 import { compareScenes, isSection } from './scene-order.js'
 import type { SceneSection } from './scene-order.js'
+import { createEntryFallbackMatcher } from './entry-fallback.js'
+import { runManifestJob } from './manifest-worker.js'
+import type { ManifestJob, ManifestWorkerResult } from './manifest-worker.js'
+import { Worker } from 'node:worker_threads'
 import type { Plugin, ViteDevServer } from 'vite'
+
+type ManifestJobResult = ReturnType<typeof runManifestJob>
 
 const VIRTUAL_CONFIG = 'virtual:playground/config'
 const VIRTUAL_SCENES = 'virtual:playground/scenes'
@@ -148,6 +154,14 @@ interface PlaygroundUserConfig {
   title?: string
   scenes?: string
   base?: string
+  /** 只作用于场景 URL 的前缀（MPA 部署用），见 playground 包的 PlaygroundConfig.routeBase */
+  routeBase?: string
+  /**
+   * MPA 第二入口的 HTML（默认 `playground/index.html`）。
+   * 配了 routeBase 时，dev 下把 `<routeBase>/...` 的页面请求回落到它 ——
+   * History 路由在磁盘上没有对应文件，Vite 自带的 spa 回落只会给根 index.html（宿主主应用）。
+   */
+  entry?: string
   port?: number
   /** 契约清单要扫描的组件 glob（如 src/components 下所有 .vue）；不配则不生成 manifest */
   components?: string[]
@@ -506,95 +520,167 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
     // pages 已在扫描时按「组声明序 → 组内顺序 → 子组件紧跟父页」排好，这里不再全局重排（否则父子会被打散）
   }
 
-  /** 生成契约清单（.playground/manifest.json + llms.txt + coverage.md） */
-  const generateManifest = (): void => {
+  /** 演示环境：globals / 插件 / 分组 / 页面清单（MCP 与 llms.txt 的数据源） */
+  const buildEnv = (): ManifestEnv => {
+    const scenesOfPage = new Map<string, string[]>()
+    for (const scene of scenes) {
+      const list = scenesOfPage.get(scene.pageId) ?? []
+      list.push(scene.id)
+      scenesOfPage.set(scene.pageId, list)
+    }
+    const envPages: ManifestPage[] = pages.map((page) => ({
+      id: page.id,
+      group: page.group,
+      groupDir: page.groupDir,
+      title: page.title,
+      order: page.order,
+      depth: page.depth,
+      ...(page.parentId ? { parentId: page.parentId } : {}),
+      ...(page.component ? { component: page.component } : {}),
+      ...(page.module ? { module: page.module } : {}),
+      ...(page.doc ? { doc: true } : {}),
+      ...(page.showSource !== undefined ? { showSource: page.showSource } : {}),
+      dir: `${toPosix(path.relative(root, scenesDir))}/${page.id}`,
+      scenes: scenesOfPage.get(page.id) ?? [],
+    }))
+    const groupLabels = new Map<string, string>()
+    for (const page of pages) groupLabels.set(page.groupDir, page.group)
+    const theme = (config.theme ?? {}) as { ui?: string; stage?: string }
+    const plugins = Array.isArray(config.plugins)
+      ? config.plugins.filter((item): item is string => typeof item === 'string')
+      : []
+    const routeBase =
+      typeof config.routeBase === 'string' ? config.routeBase : typeof config.base === 'string' ? config.base : '/'
+    return {
+      title: typeof config.title === 'string' ? config.title : 'rinova-playground',
+      sceneRoot: toPosix(path.relative(root, scenesDir)),
+      routeBase,
+      groups: [...groupLabels].map(([dir, label]) => ({ dir, label })),
+      globals: (config.globals ?? {}) as Record<string, unknown>,
+      plugins,
+      theme: { ui: theme.ui ?? 'auto', stage: theme.stage ?? 'light' },
+      sources: config.sources !== false,
+      components: { configured: Array.isArray(config.components) && config.components.length > 0, count: 0 },
+      modules: { configured: Array.isArray(config.modules) && config.modules.length > 0, count: 0 },
+      pages: envPages,
+    }
+  }
+
+  /** 组装一次清单任务的输入（纯数据：能结构化克隆给 worker 线程） */
+  const manifestJob = (): ManifestJob | null => {
     const patterns = Array.isArray(config.components) ? config.components : []
     const modulePatterns = Array.isArray(config.modules)
       ? config.modules.filter((item): item is string => typeof item === 'string' && item.trim() !== '')
       : []
-    if ((!patterns.length && !modulePatterns.length) || !scenes.length) return
-    const startedAt = Date.now()
+    if ((!patterns.length && !modulePatterns.length) || !scenes.length) return null
+    return {
+      root,
+      patterns,
+      modulePatterns,
+      tsconfig: typeof config.tsconfig === 'string' ? config.tsconfig : 'tsconfig.json',
+      outDir: path.join(root, '.playground'),
+      env: buildEnv(),
+      scenes,
+    }
+  }
+
+  /** 清单生成完：让 API 虚拟模块失效，dev 下请求过 API 的会话再整页刷一次 */
+  const applyManifestResult = (result: ManifestJobResult, label: string): void => {
+    const apiMod = RESOLVED_ID[VIRTUAL_API] ? devServer?.moduleGraph.getModuleById(RESOLVED_ID[VIRTUAL_API] as string) : undefined
+    if (apiMod && devServer) devServer.moduleGraph.invalidateModule(apiMod)
+    console.log(
+      `[rinova-playground] 契约清单：${result.components} 个组件 / ${result.props} props / 未覆盖 ${result.uncovered} → .playground/（${result.ms}ms${label}）` +
+        (result.modules ? `；模块 ${result.modules} 个 / ${result.functions} 个函数` : '')
+    )
+    if (apiRequested && devServer) devServer.ws.send({ type: 'full-reload' })
+  }
+
+  /** 主线程内联生成：build 必须等结果；dev 下 worker 起不来时兜底 */
+  const generateManifest = (): void => {
+    const job = manifestJob()
+    if (!job) return
     try {
-      const tsconfig = typeof config.tsconfig === 'string' ? config.tsconfig : 'tsconfig.json'
-      // 非组件模块：函数 / hooks / 常量的契约（只有配了 modules 才会建 Program）
-      const modules = modulePatterns.length
-        ? buildModules({ root, patterns: modulePatterns, tsconfig, scenes })
-        : []
-
-      /** 演示环境：globals / 插件 / 分组 / 页面清单（MCP 与 llms.txt 的数据源） */
-      const buildEnv = (): ManifestEnv => {
-        const scenesOfPage = new Map<string, string[]>()
-        for (const scene of scenes) {
-          const list = scenesOfPage.get(scene.pageId) ?? []
-          list.push(scene.id)
-          scenesOfPage.set(scene.pageId, list)
-        }
-        const envPages: ManifestPage[] = pages.map((page) => ({
-          id: page.id,
-          group: page.group,
-          groupDir: page.groupDir,
-          title: page.title,
-          order: page.order,
-          depth: page.depth,
-          ...(page.parentId ? { parentId: page.parentId } : {}),
-          ...(page.component ? { component: page.component } : {}),
-          ...(page.module ? { module: page.module } : {}),
-          ...(page.doc ? { doc: true } : {}),
-          ...(page.showSource !== undefined ? { showSource: page.showSource } : {}),
-          dir: `${toPosix(path.relative(root, scenesDir))}/${page.id}`,
-          scenes: scenesOfPage.get(page.id) ?? [],
-        }))
-        const groupLabels = new Map<string, string>()
-        for (const page of pages) groupLabels.set(page.groupDir, page.group)
-        const theme = (config.theme ?? {}) as { ui?: string; stage?: string }
-        const plugins = Array.isArray(config.plugins)
-          ? config.plugins.filter((item): item is string => typeof item === 'string')
-          : []
-        const routeBase =
-          typeof config.routeBase === 'string' ? config.routeBase : typeof config.base === 'string' ? config.base : '/'
-        return {
-          title: typeof config.title === 'string' ? config.title : 'rinova-playground',
-          sceneRoot: toPosix(path.relative(root, scenesDir)),
-          routeBase,
-          groups: [...groupLabels].map(([dir, label]) => ({ dir, label })),
-          globals: (config.globals ?? {}) as Record<string, unknown>,
-          plugins,
-          theme: { ui: theme.ui ?? 'auto', stage: theme.stage ?? 'light' },
-          sources: config.sources !== false,
-          components: { configured: patterns.length > 0, count: 0 },
-          modules: { configured: modulePatterns.length > 0, count: 0 },
-          pages: envPages,
-        }
-      }
-
-      const manifest = buildManifest({
-        root,
-        patterns,
-        tsconfig,
-        scenes,
-        modules,
-        env: buildEnv(),
-      })
-      // 数量以实际提取结果为准（glob 命中了多少组件 / 模块）
-      manifest.env.components.count = manifest.components.length
-      manifest.env.modules.count = manifest.modules.length
-      writeManifest(path.join(root, '.playground'), manifest)
-      // 契约变了要让 API 模块失效：下次请求重新注入
-      const apiMod = devServer?.moduleGraph.getModuleById(RESOLVED_ID[VIRTUAL_API] as string)
-      if (apiMod && devServer) devServer.moduleGraph.invalidateModule(apiMod)
-      const props = manifest.components.reduce((sum, item) => sum + item.props.length, 0)
-      const uncovered = manifest.components.reduce((sum, item) => sum + item.uncoveredProps.length, 0)
-      const functions = manifest.modules.reduce((sum, item) => sum + item.functions.length, 0)
-      console.log(
-        `[rinova-playground] 契约清单：${manifest.components.length} 个组件 / ${props} props / 未覆盖 ${uncovered} → .playground/（${Date.now() - startedAt}ms）` +
-          (manifest.modules.length ? `；模块 ${manifest.modules.length} 个 / ${functions} 个函数` : '')
-      )
+      applyManifestResult(runManifestJob(job), '')
     } catch (error) {
       console.warn(
         '[rinova-playground] 契约清单生成失败（不影响 dev/build）：',
         error instanceof Error ? error.message : error
       )
     }
+  }
+
+  let manifestWorker: Worker | null = null
+  let workerBroken = false
+  let jobSeq = 0
+  let jobInflight = false
+  let jobQueued = false
+  /** 有页面请求过 API 虚拟模块：清单就绪后要刷一次，否则 API 表停在空态 */
+  let apiRequested = false
+
+  const handleWorkerMessage = (message: ManifestWorkerResult): void => {
+    jobInflight = false
+    if (message.type === 'failed') {
+      console.warn('[rinova-playground] 契约清单生成失败（不影响 dev/build）：', message.error)
+    } else {
+      applyManifestResult(message, '，后台线程')
+    }
+    if (jobQueued) {
+      jobQueued = false
+      requestManifest()
+    }
+  }
+
+  const ensureManifestWorker = (): Worker | null => {
+    if (manifestWorker) return manifestWorker
+    if (workerBroken) return null
+    try {
+      const worker = new Worker(new URL('./manifest-worker.js', import.meta.url))
+      worker.on('message', handleWorkerMessage)
+      worker.on('error', (error) => {
+        workerBroken = true
+        console.warn('[rinova-playground] 清单线程出错，回退到主线程生成：', messageOf(error))
+      })
+      worker.on('exit', () => {
+        manifestWorker = null
+        jobInflight = false
+      })
+      manifestWorker = worker
+      return worker
+    } catch (error) {
+      workerBroken = true
+      console.warn('[rinova-playground] 清单线程启动失败，回退到主线程生成：', messageOf(error))
+      return null
+    }
+  }
+
+  /**
+   * dev 专用：清单生成交给常驻 worker，主线程不等它。
+   *
+   * 真实宿主冷启一次约 9.7s（vue-component-meta + TS 全量提取），以前卡在 `buildStart` 里，
+   * `pnpm dev` 的 ready 被拖到 10s 以上、主应用跟着等。现在 ready 只等场景扫描（百毫秒级），
+   * 清单在后台线程跑完再让 API 模块失效。
+   */
+  const requestManifest = (): void => {
+    if (jobInflight) {
+      jobQueued = true
+      return
+    }
+    const job = manifestJob()
+    if (!job) return
+    const worker = ensureManifestWorker()
+    if (!worker) {
+      generateManifest()
+      return
+    }
+    jobInflight = true
+    jobSeq += 1
+    worker.postMessage({ type: 'generate', id: jobSeq, job })
+  }
+
+  /** 组件文件改动要同步给「真正在跑提取」的那一侧（worker 或主线程） */
+  const syncInspector = (file: string): void => {
+    if (manifestWorker) manifestWorker.postMessage({ type: 'sync', file })
+    else syncComponentFile(file)
   }
 
   const ensureReady = async (): Promise<void> => {
@@ -639,8 +725,13 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
     const hasComponents = Array.isArray(config.components) && config.components.length > 0
     const hasModules = Array.isArray(config.modules) && config.modules.length > 0
     const empty = 'export const api = {}\nexport const pageComponents = {}\nexport const modules = {}\nexport const pageModules = {}\n'
-    // 首次请求时清单可能还没生成（dev 下 buildStart 与首个请求的先后不保证）
-    if (!fs.existsSync(manifestPath) && (hasComponents || hasModules)) generateManifest()
+    // 首次请求时清单可能还没生成（dev 下清单在后台线程里跑）
+    if (!isBuild) apiRequested = true
+    if (!fs.existsSync(manifestPath) && (hasComponents || hasModules)) {
+      // build 走同步生成；dev 只排一次后台任务，本次请求先给空的 API 模块，生成完再整页刷
+      if (isBuild) generateManifest()
+      else requestManifest()
+    }
     if (!fs.existsSync(manifestPath)) return empty
 
     let manifest: { components?: Array<{ name: string }>; modules?: Array<{ name: string }> } | null = null
@@ -827,10 +918,16 @@ ${pageCode}
       outDir = viteConfig.build.outDir
     },
 
-    /** 契约清单：组件 props/emits/slots → .playground/manifest.json + llms.txt + coverage.md */
+    /**
+     * 契约清单：组件 props/emits/slots → .playground/manifest.json + llms.txt + coverage.md
+     *
+     * build 必须等结果（清单要进 dist）；dev 不等 —— 真实宿主冷启一次约 9.7s，
+     * 卡在这里会把 server ready 拖到 10s 以上，主应用跟着等。
+     */
     buildStart: async () => {
       await ensureReady()
-      generateManifest()
+      if (isBuild) generateManifest()
+      else requestManifest()
     },
 
     /** 构建时把清单一起放进产物 */
@@ -865,6 +962,28 @@ ${pageCode}
       devServer = server
       await ensureReady()
       server.watcher.add(scenesDir)
+
+      // MPA 第二入口：`<routeBase>/...` 的页面请求回落到 playground 自己的 HTML。
+      // 必须在 Vite 内部中间件之前注册（它自带的 spa 回落会换成根 index.html，那是宿主主应用）。
+      const entry = typeof config.entry === 'string' && config.entry.trim() ? config.entry.trim() : 'playground/index.html'
+      const routeBase =
+        typeof config.routeBase === 'string' ? config.routeBase : typeof config.base === 'string' ? config.base : '/'
+      if (routeBase !== '/' && fs.existsSync(path.join(root, entry))) {
+        const matchesFallback = createEntryFallbackMatcher(routeBase)
+        server.middlewares.use((req, _res, next) => {
+          const url = req.url ?? ''
+          const pathname = (url.split('#')[0] ?? '').split('?')[0] ?? ''
+          if (!matchesFallback(pathname, req.method, String(req.headers?.accept ?? ''))) return next()
+          const query = url.includes('?') ? `?${url.split('?')[1]}` : ''
+          req.url = `/${entry.replace(/^\/+/, '')}${query}`
+          next()
+        })
+      }
+
+      server.httpServer?.on('close', () => {
+        manifestWorker?.terminate()
+        manifestWorker = null
+      })
 
       const refresh = (file?: string): void => {
         const target = file ?? ''
@@ -907,7 +1026,7 @@ ${pageCode}
         if (process.env.RINOVA_DEBUG_WATCH) console.log('[rp-debug]   vue=', true, 'hit=', hit)
         if (!hit) return
         // 先把最新文本推给 checker，否则语言服务还在用旧快照（改 props 后清单不更新）
-        syncComponentFile(path.resolve(file))
+        syncInspector(path.resolve(file))
         scheduleManifest()
       }
 
