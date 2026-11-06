@@ -29,11 +29,13 @@ pnpm install
 pnpm dev        # 示例项目  → http://localhost:5273
 pnpm dev:docs   # 文档站     → http://localhost:5280
 pnpm build      # 构建示例（产物含 manifest.json / llms*.txt / coverage.md）
-pnpm verify     # 65 项验收（三个示例全查：目录三层、页/场景一致、API 绑定、契约结构、env 段、llms 手册、场景校验规则）
-pnpm verify:mcp        # MCP 冒烟（15 项：七个工具 + 默认当前目录）
+pnpm verify     # 69 项验收（三个示例全查：目录三层、页/场景一致、API 绑定、契约结构、env 段、llms 手册、字段展开规则、场景校验规则）
+pnpm verify:mcp        # MCP 冒烟（17 项：八个工具 + 字段预算 + 默认当前目录）
 pnpm verify:mcp:reload # 清单重写后自动重读（4 项）
 pnpm verify:mcp:edge   # 找不到清单 / --project / --manifest / 坏 JSON（5 项）
 pnpm verify:loop       # AI 写作闭环（写场景 → 清单热更新 → 校验；会临时写测试床文件）
+pnpm verify:types      # 类型提取（字面量联合 / enum / 交叉 / 内联联合）
+pnpm verify:fields     # 字段展开（外部包不展开 / 32 上限 / 说明清洗）
 ```
 
 ## 示例
