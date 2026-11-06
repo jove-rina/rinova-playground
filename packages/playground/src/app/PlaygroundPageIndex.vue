@@ -20,7 +20,7 @@ const SECTION_LABELS: { key: SceneDescriptor['section']; label: string }[] = [
 const groups = computed(() =>
   SECTION_LABELS.map((section) => ({
     ...section,
-    items: props.scenes.filter((scene) => !scene.hidden && scene.section === section.key),
+    items: props.scenes.filter((scene) => !scene.hidden && (scene.section ?? 'props') === section.key),
   })).filter((group) => group.items.length > 0)
 )
 </script>

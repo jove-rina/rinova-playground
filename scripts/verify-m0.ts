@@ -832,6 +832,53 @@ record(
   searchBad.length ? searchBad.map((item) => `${item.label}: ${item.got}≠${item.want}`).join('; ') : '5 条用例通过'
 )
 
+/* 12.5 页内场景排序：内容区与右侧索引必须同序（真实宿主里 order 按 section 各自编号，撞车后按 id 排就会串位） */
+const { orderScenes } = await import('../packages/playground-vite/src/scene-order.ts')
+type OrderProbe = { id: string; order: number; section?: 'overview' | 'props' | 'events' | 'exposes' | 'slots' }
+const sortCases: Array<{ label: string; input: OrderProbe[]; want: string[] }> = [
+  {
+    label: '跨 section 的 order 撞车：Props 必须排在 Events 前（df-erp 的 event-validate / model）',
+    input: [
+      { id: 'p/event-validate', order: 10, section: 'events' },
+      { id: 'p/model', order: 10, section: 'props' },
+    ],
+    want: ['p/model', 'p/event-validate'],
+  },
+  {
+    label: '概要永远在最前，即使 order 更大',
+    input: [
+      { id: 'p/model', order: 1, section: 'props' },
+      { id: 'p/overview', order: 900, section: 'overview' },
+    ],
+    want: ['p/overview', 'p/model'],
+  },
+  {
+    label: '未声明 section 归到 Props 段（索引里不能消失）',
+    input: [
+      { id: 'p/event', order: 1, section: 'events' },
+      { id: 'p/loose', order: 50 },
+    ],
+    want: ['p/loose', 'p/event'],
+  },
+  {
+    label: '同组内按 order，再按 id 稳定',
+    input: [
+      { id: 'p/b', order: 10, section: 'props' },
+      { id: 'p/a', order: 10, section: 'props' },
+      { id: 'p/c', order: 1, section: 'props' },
+    ],
+    want: ['p/c', 'p/a', 'p/b'],
+  },
+]
+const sortBad = sortCases.filter((item) => orderScenes(item.input).map((scene) => scene.id).join(',') !== item.want.join(','))
+record(
+  '页内场景排序（分组 → order → id，索引与正文同序）',
+  sortBad.length === 0,
+  sortBad.length
+    ? sortBad.map((item) => `${item.label}：得到 ${orderScenes(item.input).map((s) => s.id).join(',')}`).join('; ')
+    : `${sortCases.length} 条用例通过`
+)
+
 /* 13. 契约清单 glob：`**\/` 必须能匹配任意层目录（真实项目组件常在 Xxx/src/components/ 三层） */
 const { globToRegExp } = await import('../packages/playground-vite/src/manifest.ts')
 const globCases: Array<[pattern: string, file: string, expected: boolean]> = [

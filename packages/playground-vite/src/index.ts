@@ -6,6 +6,8 @@ import { buildManifest, syncComponentFile, writeManifest } from './manifest.js'
 import type { ManifestEnv, ManifestPage } from './manifest.js'
 import { buildModules } from './module-api.js'
 import { resolvePluginSpecifier } from './plugin-spec.js'
+import { compareScenes, isSection } from './scene-order.js'
+import type { SceneSection } from './scene-order.js'
 import type { Plugin, ViteDevServer } from 'vite'
 
 const VIRTUAL_CONFIG = 'virtual:playground/config'
@@ -31,9 +33,12 @@ const PAGE_META_FILES = ['meta.ts', 'meta.mts', 'meta.js', 'meta.mjs']
 
 const DEFAULT_SCENES_DIR = 'src/scenes'
 
-/** 页内索引的分组顺序，空组不展示 */
-export const SECTION_ORDER = ['overview', 'props', 'events', 'exposes', 'slots'] as const
-export type SceneSection = (typeof SECTION_ORDER)[number]
+/**
+ * 页内索引的分组顺序，空组不展示。
+ * 排序规则（分组 → order → id）在 `scene-order.ts`，插件与 verify 共用一份。
+ */
+export { SECTION_ORDER, isSection, orderScenes, sceneSectionRank } from './scene-order.js'
+export type { SceneSection } from './scene-order.js'
 
 export interface PlaygroundPluginOptions {
   /** 指定配置文件路径，默认在项目根查找 playground.config.{ts,mts,js,mjs} */
@@ -198,9 +203,6 @@ const parseFrontmatter = (source: string): Record<string, string | string[]> => 
   }
   return data
 }
-
-const isSection = (value: unknown): value is SceneSection =>
-  typeof value === 'string' && (SECTION_ORDER as readonly string[]).includes(value)
 
 /**
  * rinova-playground 的 Vite 插件。
@@ -499,7 +501,8 @@ export const playground = (options: PlaygroundPluginOptions = {}): Plugin => {
       }
     }
 
-    scenes.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+    // 内容区与右侧索引必须同序：分组（概要 → Props → Events → Exposes → Slots）→ order → id
+    scenes.sort(compareScenes)
     // pages 已在扫描时按「组声明序 → 组内顺序 → 子组件紧跟父页」排好，这里不再全局重排（否则父子会被打散）
   }
 

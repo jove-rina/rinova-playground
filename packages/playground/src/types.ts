@@ -11,7 +11,11 @@ export interface SceneDescriptor {
   name: string
   /** 侧栏外的场景标题，默认由文件名推导 */
   title: string
-  section: SceneSection
+  /**
+   * 索引分组；未声明时按 `props` 处理（内容区与索引必须都算在 Props 段，
+   * 否则这个场景会出现在正文里却在右侧索引里消失）
+   */
+  section?: SceneSection
   /** sceneMeta.api：本场景覆盖的公开 API 名 */
   api: string[] | null
   /** 分组显示名 */

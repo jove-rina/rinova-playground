@@ -80,7 +80,7 @@ const SECTION_KIND: Record<string, string> = {
 }
 
 const inspect = (name: string): void => {
-  emit('inspect', `${SECTION_KIND[props.scene.section] ?? 'props'}:${name}`)
+  emit('inspect', `${SECTION_KIND[props.scene.section ?? 'props'] ?? 'props'}:${name}`)
 }
 
 /** 本场景是否声明了输入 / 输出；决定「输入 | 输出」并排还是单栏 */
