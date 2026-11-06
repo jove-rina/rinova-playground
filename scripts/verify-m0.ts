@@ -9,6 +9,8 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { runTypeFixtureChecks } from './lib/type-fixture.ts'
+import { runFieldFixtureChecks } from './lib/field-fixture.ts'
 
 const root = process.cwd()
 const pkgDir = path.join(root, 'packages/playground')
@@ -574,6 +576,38 @@ if (fs.existsSync(manifestPath)) {
   record('类型定义汇总（声明原文 / JSDoc / 来源文件）', true, '未生成 manifest，跳过')
 }
 
+/* 11.8 类型提取：字面量联合 / enum / 交叉 / 内联联合（与 verify:types 同源） */
+try {
+  const typeChecks = runTypeFixtureChecks()
+  const passed = typeChecks.filter((item) => item.ok).length
+  const firstFail = typeChecks.find((item) => !item.ok)
+  record(
+    '类型提取（字面量联合 / enum / 交叉 / 内联联合 / values）',
+    passed === typeChecks.length,
+    passed === typeChecks.length
+      ? `${passed}/${typeChecks.length} 条用例通过（夹具 TagList）`
+      : `${passed}/${typeChecks.length} 条通过；首个失败：${firstFail?.name ?? ''}`
+  )
+} catch (error) {
+  record('类型提取（字面量联合 / enum / 交叉 / 内联联合 / values）', false, `夹具运行失败：${String(error)}`)
+}
+
+/* 11.9 字段展开规则：外部包不展开 / 32 上限 / 说明清洗（与 verify:fields 同源） */
+try {
+  const fieldChecks = runFieldFixtureChecks()
+  const passed = fieldChecks.filter((item) => item.ok).length
+  const firstFail = fieldChecks.find((item) => !item.ok)
+  record(
+    '字段展开规则（外部包不展开 / 32 上限 / 说明清洗）',
+    passed === fieldChecks.length,
+    passed === fieldChecks.length
+      ? `${passed}/${fieldChecks.length} 条用例通过（夹具 FieldCard）`
+      : `${passed}/${fieldChecks.length} 条通过；首个失败：${firstFail?.name ?? ''}`
+  )
+} catch (error) {
+  record('字段展开规则（外部包不展开 / 32 上限 / 说明清洗）', false, `夹具运行失败：${String(error)}`)
+}
+
 /* 12. 脚手架默认开契约清单：模板必须声明 components，否则新人拿不到 manifest */
 const templateConfigPath = path.join(root, 'packages/create-playground/template/playground.config.ts')
 const templateConfig = fs.existsSync(templateConfigPath)
@@ -1001,9 +1035,9 @@ record('manifest env 段（页面清单 / globals / 插件 / 分组）', envProb
 
 const llmsFile = path.join(root, 'examples/minimal-lib/.playground/llms.txt')
 const llmsText = fs.existsSync(llmsFile) ? fs.readFileSync(llmsFile, 'utf8') : ''
-const llmsSections = ['## 1. 环境', '## 2. 写作规则', '## 3. 最小骨架', '## 4. 页面清单', '## 5. 组件契约', '## 6. 模块契约']
+const llmsSections = ['## 1. 环境', '## 2. 写作规则', '## 3. 最小骨架', '## 4. 页面清单', '## 5. 契约与待办']
 const llmsMissing = llmsSections.filter((section) => !llmsText.includes(section))
-const llmsNeeds = ['apiBase', '<style scoped lang="less">', 'sceneMeta 字段', 'pageMeta 字段']
+const llmsNeeds = ['apiBase', '<style scoped lang="less">', 'sceneMeta 字段', 'pageMeta 字段', 'llms-components.txt']
 const llmsMissContent = llmsNeeds.filter((item) => !llmsText.includes(item))
 record(
   'llms.txt 是「AI 能照着写场景」的手册',
@@ -1012,6 +1046,34 @@ record(
     ? `缺章节：${llmsMissing.join(', ') || '无'}；缺内容：${llmsMissContent.join(', ') || '无'}`
     : `${llmsSections.length} 个章节 / ${llmsText.split('\n').length} 行`
 )
+
+/* 11.6 手册不再夹带契约与待办：契约往往几百 KB，整份喂给模型没有意义 */
+const llmsParts = ['llms-components.txt', 'llms-todo.txt'].map((name) => {
+  const file = path.join(root, 'examples/minimal-lib/.playground', name)
+  return { name, exists: fs.existsSync(file), size: fs.existsSync(file) ? fs.statSync(file).size : 0 }
+})
+const guideTooBig = llmsText.length > 64 * 1024
+record(
+  'llms 三份分工（手册 ≤ 64KB / 契约 / 待办）',
+  !guideTooBig && llmsParts.every((part) => part.exists && part.size > 0),
+  guideTooBig
+    ? `手册 ${Math.round(llmsText.length / 1024)}KB，超过 64KB`
+    : `手册 ${Math.round(llmsText.length / 1024)}KB + ${llmsParts.map((part) => `${part.name} ${Math.round(part.size / 1024)}KB`).join(' / ')}`
+)
+
+/* 11.7 清单是单行紧凑 JSON：缩进版在真实宿主上会变成十几万行 */
+const compactManifestFile = path.join(root, 'examples/minimal-lib/.playground/manifest.json')
+if (fs.existsSync(compactManifestFile)) {
+  const compactText = fs.readFileSync(compactManifestFile, 'utf8').trimEnd()
+  const lineCount = compactText.split('\n').length
+  record(
+    '清单是单行紧凑 JSON（可读性交给 jq）',
+    lineCount === 1,
+    `${lineCount} 行 / ${Math.round(compactText.length / 1024)}KB`
+  )
+} else {
+  record('清单是单行紧凑 JSON（可读性交给 jq）', true, '未生成 manifest，跳过')
+}
 
 const { validateScenes } = await import('../packages/playground-mcp/src/validate.ts')
 const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rp-verify-'))

@@ -13,16 +13,18 @@ import Prose from '../../../components/Prose.vue'
     title="MCP 与 AI 闭环"
     lead="把环境清单挂到 Cursor / Claude Code：AI 先知道你有什么组件、怎么写场景，写完还能自己校验。"
   >
-    <h2>AI 能读到的三份东西</h2>
+    <h2>AI 能读到的四份东西</h2>
     <table>
       <thead><tr><th>产物</th><th>给谁</th><th>内容</th></tr></thead>
       <tbody>
         <tr><td><code>.playground/manifest.json</code></td><td>机器</td><td>组件 / 模块契约 + <code>env</code> 段（globals、插件、分组、页面清单）</td></tr>
-        <tr><td><code>.playground/llms.txt</code></td><td>模型</td><td>七节手册：环境 → 写作规则 → 最小骨架 → 页面清单 → 组件契约 → 模块契约 → 待办</td></tr>
+        <tr><td><code>.playground/llms.txt</code></td><td>模型</td><td>手册：环境 → 写作规则 → 最小骨架 → 页面清单 → 契约与待办在哪（≤64KB）</td></tr>
+        <tr><td><code>.playground/llms-components.txt</code></td><td>模型 / grep</td><td>组件与模块契约全文；按需用 <code>capability_get</code> 取单个组件，别整份读</td></tr>
+        <tr><td><code>.playground/llms-todo.txt</code></td><td>人</td><td>没有场景的 props、没有 JSDoc 的 API</td></tr>
         <tr><td><code>.playground/coverage.md</code></td><td>人</td><td>props 覆盖情况与缺 JSDoc 的 API</td></tr>
       </tbody>
     </table>
-    <p>三份都是生成物，跟着 <code>pnpm dev</code> / <code>pnpm build</code> 一起更新；场景增删改后清单 400ms 内重算，正在跑的 MCP 会话会在下一次工具调用时自动读到新内容（不用重启客户端）。</p>
+    <p>四份都是生成物，跟着 <code>pnpm dev</code> / <code>pnpm build</code> 一起更新；场景增删改后清单 400ms 内重算，正在跑的 MCP 会话会在下一次工具调用时自动读到新内容（不用重启客户端）。</p>
     <p>不传参数时按当前目录找清单，找不到就向上找 6 层；monorepo 多包才需要 <code>--project</code>。</p>
 
     <h2>接入</h2>
@@ -40,17 +42,18 @@ import Prose from '../../../components/Prose.vue'
   }
 }</code></pre>
 
-    <h2>七个工具</h2>
+    <h2>八个工具</h2>
     <table>
       <thead><tr><th>工具</th><th>用途</th></tr></thead>
       <tbody>
         <tr><td><code>capability_search</code></td><td>按关键词找组件</td></tr>
-        <tr><td><code>capability_get</code></td><td>取完整契约，每个 prop 带文件行号</td></tr>
+        <tr><td><code>capability_get</code></td><td>取完整契约，组件带行号、成员带 <code>← L&lt;n&gt;</code>；字段超过 8 个只给总数</td></tr>
+        <tr><td><code>fields_of</code></td><td>按需取某个 prop 的字段（默认前 20 个）</td></tr>
         <tr><td><code>env_get</code></td><td>globals / 插件 / 分组 / 页面表</td></tr>
         <tr><td><code>scene_scaffold</code></td><td>算出该建的文件路径与场景骨架（返回文本，不落盘）</td></tr>
         <tr><td><code>scene_validate</code></td><td>校验目录层级 / 样式 scoped / 全局选择器 / 废弃 API / meta 字段 / 页绑定</td></tr>
         <tr><td><code>scenario_list</code></td><td>列场景，可按组件过滤</td></tr>
-        <tr><td><code>coverage_report</code></td><td>哪些 props 还没有场景</td></tr>
+        <tr><td><code>coverage_report</code></td><td>覆盖汇总；<code>detail=true</code> 才逐条列未覆盖 props</td></tr>
       </tbody>
     </table>
 

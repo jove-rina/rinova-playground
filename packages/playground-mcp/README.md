@@ -49,14 +49,18 @@ export default defineConfig({
 | 工具 | 输入 | 返回 |
 |---|---|---|
 | `capability_search` | `query`、`limit?` | 命中的组件 + prop 名 + 场景数 |
-| `capability_get` | `component` | props/events/slots/exposed 全量契约，每个 prop 带 `文件:行号`，附相关场景与未覆盖 props |
+| `capability_get` | `component` | props/events/slots/exposed 全量契约，组件路径带行号、成员带 `← L<n>`；单 prop 字段超过 8 个时只给总数 |
+| `fields_of` | `component`、`prop`、`limit?` | 某个 prop / 事件参数展开后的字段（默认前 20 个） |
 | `scenario_list` | `component?` | 场景 id、标题、分组、文件路径 |
-| `coverage_report` | — | 未覆盖 props 清单 + 覆盖率 |
+| `coverage_report` | `detail` / `limit` | 默认按组件汇总覆盖率；`detail=true` 才逐条列出未覆盖 props |
+| `env_get` | — | 环境段的人读版：globals / 插件 / 分组 / 页面表 |
+| `scene_scaffold` | `page`、`slug`、`api?` | 该建的文件路径与内容（返回文本，不写盘） |
+| `scene_validate` | `path?` | 场景校验：目录层级、scoped、全局选择器、废弃 API、sceneMeta、页绑定 |
 
 只读：不改项目文件，也不启动浏览器。写场景仍由人或 AI 直接写 `.vue` 文件（「文件即场景」主线不变）。
 
 ## 验证
 
 ```bash
-node --experimental-strip-types scripts/probe-mcp.ts   # 仓库根执行，7/7 通过
+pnpm verify:mcp   # 仓库根执行，17/17 通过
 ```

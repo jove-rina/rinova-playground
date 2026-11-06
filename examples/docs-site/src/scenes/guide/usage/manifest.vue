@@ -16,7 +16,9 @@ import Prose from '../../../components/Prose.vue'
       <thead><tr><th>文件</th><th>用途</th></tr></thead>
       <tbody>
         <tr><td><code>manifest.json</code></td><td>结构化契约 + 关联场景 + 未覆盖 props</td></tr>
-        <tr><td><code>llms.txt</code></td><td>同一份内容的纯文本视图，直接喂给模型</td></tr>
+        <tr><td><code>llms.txt</code></td><td>手册：环境 / 写作规则 / 骨架 / 页面清单（≤64KB，直接喂给模型）</td></tr>
+        <tr><td><code>llms-components.txt</code></td><td>组件与模块契约全文（按组件用 MCP 取，不要整份读）</td></tr>
+        <tr><td><code>llms-todo.txt</code></td><td>没有场景的 props、没有 JSDoc 的 API</td></tr>
         <tr><td><code>coverage.md</code></td><td>props 覆盖报告（哪些 prop 没有场景）</td></tr>
       </tbody>
     </table>

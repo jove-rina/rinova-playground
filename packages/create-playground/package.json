@@ -1,6 +1,6 @@
 {
   "name": "create-rinova-playground",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "rinova-playground 脚手架：pnpm create rinova-playground",
   "type": "module",
   "license": "MIT",

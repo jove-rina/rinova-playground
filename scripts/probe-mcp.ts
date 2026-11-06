@@ -87,7 +87,7 @@ const probeWithoutArgs = (cwd: string): Promise<{ ok: boolean; detail: string }>
           const message = JSON.parse(line) as { id?: number; result?: { tools?: { name: string }[] } }
           if (message.id === 2) {
             const names = (message.result?.tools ?? []).map((tool) => tool.name)
-            done(names.length === 7, `7 个工具：${names.includes('scene_validate')}`)
+            done(names.length >= 8, `${names.length} 个工具：${names.includes('scene_validate')}`)
           }
         } catch {
           // 还没收到完整 JSON，等下一块
@@ -114,10 +114,11 @@ const run = async (): Promise<void> => {
   const tools = await request('tools/list', {})
   const names = ((tools.tools ?? []) as { name: string }[]).map((tool) => tool.name)
   check(
-    'tools/list 暴露七个工具',
+    'tools/list 暴露全部工具（含 fields_of）',
     [
       'capability_search',
       'capability_get',
+      'fields_of',
       'scenario_list',
       'coverage_report',
       'env_get',
@@ -133,8 +134,8 @@ const run = async (): Promise<void> => {
   const get = await call('capability_get', { component: 'MyButton' })
   check(
     'capability_get 含 props 与行号锚点',
-    get.text.includes('size') && /MyButton\.vue:\d+/.test(get.text),
-    (get.text.match(/MyButton\.vue:\d+/) ?? [''])[0]
+    get.text.includes('size') && /← L\d+/.test(get.text),
+    (get.text.match(/← L\d+/) ?? [''])[0]
   )
 
   const input = await call('capability_get', { component: 'MyInput' })
@@ -156,6 +157,20 @@ const run = async (): Promise<void> => {
 
   const coverage = await call('coverage_report', {})
   check('coverage_report 指出未覆盖 prop', /覆盖 \d+\/\d+/.test(coverage.text), coverage.text.split('\n')[0] ?? '')
+
+  const coverageDetail = await call('coverage_report', { detail: true })
+  check(
+    'coverage_report 默认给汇总、detail 才逐条展开',
+    coverage.text.includes('缺场景的组件') && !coverage.text.includes('←') && coverageDetail.text.includes('←'),
+    `汇总 ${coverage.text.length} 字符 / 明细 ${coverageDetail.text.length} 字符`
+  )
+
+  const fields = await call('fields_of', { component: 'MyTable', prop: 'columns' })
+  check(
+    'fields_of 取对象字段（带类型）',
+    /个字段/.test(fields.text) && fields.text.includes('- '),
+    fields.text.split('\n')[0] ?? ''
+  )
 
   const missing = await call('capability_get', { component: 'NotExist' })
   check('未知组件返回 isError', missing.isError, missing.text.split('\n')[0] ?? '')

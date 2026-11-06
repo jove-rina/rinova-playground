@@ -86,6 +86,8 @@ export interface ComponentApiProp {
   description: string
   /** 对象 / 对象数组类型的字段（一层），如 columns: TableColumn[] */
   fields?: ComponentApiField[]
+  /** 字面量联合 / enum 的可选值，如 mode: 'default' | 'table' → ['default','table'] */
+  values?: string[]
 }
 
 export interface ComponentApiEvent {

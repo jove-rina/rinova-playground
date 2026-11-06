@@ -60,7 +60,7 @@ pnpm build      # 纯静态产物，可直接托管
 components: ['src/components/**/*.vue'],
 ```
 
-再 `pnpm build`，`.playground/manifest.json`、`llms.txt`、`coverage.md` 会一起产出。
+再 `pnpm build`，`.playground/` 下会产出 `manifest.json`、`llms.txt`、`llms-components.txt`、`llms-todo.txt`、`coverage.md`。
 
 ## 部署注意
 

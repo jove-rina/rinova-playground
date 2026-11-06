@@ -70,15 +70,19 @@ import config from 'virtual:playground/config'
 
 ## 契约清单
 
-配置了 `components` 时（例如 `components: ['src/components/**/*.vue']`），插件用 `vue-component-meta` 提取组件 props，产出三个文件：
+配置了 `components` 时（例如 `components: ['src/components/**/*.vue']`），插件用 `vue-component-meta` 提取组件 props，产出五个文件：
 
 ```
-.playground/manifest.json   # 组件、props、类型、默认值、行号锚点
-.playground/llms.txt        # 给大模型读的能力摘要
-.playground/coverage.md     # 哪些 prop 在场景里还没被用到
+.playground/manifest.json        # 单行紧凑 JSON：组件、props、类型、默认值、行号锚点
+.playground/llms.txt             # 手册（≤64KB）：环境 / 写作规则 / 骨架 / 页面 / 去哪查
+.playground/llms-components.txt  # 组件与模块契约全文
+.playground/llms-todo.txt        # 覆盖与说明的待办
+.playground/coverage.md          # 哪些 prop 在场景里还没被用到
 ```
 
-`pnpm build` 时这三个文件会一起拷进 `build.outDir`；`@rinova/playground-mcp` 读的就是它们。
+对象 prop 只展开**本项目声明**的字段（最多 32 个），外部包（`node_modules`）的字段只留类型名 —— 否则一个继承 element-plus `TableProps` 的组件就能展开 1,348 个 CSS 字段。
+
+`pnpm build` 时这五个文件会一起拷进 `build.outDir`；`@rinova/playground-mcp` 读的就是它们。
 
 未配 `components` 时不会生成任何清单文件（不是报错）。
 

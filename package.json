@@ -19,7 +19,9 @@
     "verify:mcp": "node --experimental-strip-types scripts/probe-mcp.ts",
     "verify:loop": "node --experimental-strip-types scripts/probe-author-loop.ts",
     "verify:mcp:reload": "node --experimental-strip-types scripts/probe-mcp-reload.ts",
-    "verify:mcp:edge": "node --experimental-strip-types scripts/probe-mcp-edge.ts"
+    "verify:mcp:edge": "node --experimental-strip-types scripts/probe-mcp-edge.ts",
+    "verify:types": "node --experimental-strip-types scripts/probe-types.ts",
+    "verify:fields": "node --experimental-strip-types scripts/probe-fields.ts"
   },
   "engines": {
     "node": ">=22.12"

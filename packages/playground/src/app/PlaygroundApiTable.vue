@@ -54,6 +54,17 @@ const scenesOf = (kind: TabKey, name: string): SceneDescriptor[] =>
 
 const notesOf = (kind: TabKey, name: string): string => props.notes?.[`${kind}:${name}`] ?? ''
 
+/**
+ * 类型列是否再补一行可选值。
+ * 内联字面量联合（`'a' | 'b'`）在类型文本里已经写全了，不重复；
+ * 只有类型是别名 / enum（`TaoFormMode`）时才补，那正是用户不知道能填什么的情况。
+ */
+const showValues = (row: { type: string; values?: string[] }): boolean => {
+  const values = row.values ?? []
+  if (values.length < 2) return false
+  return !values.every((value) => row.type.includes(value))
+}
+
 /** 类型名 → 声明，供类型列点击跳转 */
 const typeNames = computed(() => typeDefs.value.map((item) => item.name))
 
@@ -71,6 +82,7 @@ const rows = computed(() => {
       required: item.required,
       description: item.description || notesOf('props', item.name),
       signature: '',
+      values: item.values ?? [],
       demos: scenesOf('props', item.name),
     }))
   }
@@ -83,6 +95,7 @@ const rows = computed(() => {
       required: false,
       description: item.description || notesOf('events', item.name),
       signature: item.signature,
+      values: [] as string[],
       demos: scenesOf('events', item.name),
     }))
   }
@@ -95,6 +108,7 @@ const rows = computed(() => {
       required: false,
       description: item.description || notesOf('slots', item.name),
       signature: '',
+      values: [] as string[],
       demos: scenesOf('slots', item.name),
     }))
   }
@@ -107,6 +121,7 @@ const rows = computed(() => {
       required: false,
       description: item.description || notesOf('exposed', item.name),
       signature: '',
+      values: [] as string[],
       demos: scenesOf('exposed', item.name),
     }))
   }
@@ -216,6 +231,7 @@ const copyType = async (text: string): Promise<void> => {
               </button>
               <span v-else class="pw-api__empty">—</span>
               <div v-if="row.signature && row.signature !== row.type" class="pw-api__signature">{{ row.signature }}</div>
+              <div v-if="showValues(row)" class="pw-api__values">{{ row.values.join(' | ') }}</div>
             </td>
             <td v-if="tab === 'props'" class="pw-api__default" :title="row.default">
               <span v-if="row.default">{{ row.default }}</span>

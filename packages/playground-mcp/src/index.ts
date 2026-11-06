@@ -1,11 +1,16 @@
 #!/usr/bin/env node
 import fs from 'node:fs'
 import path from 'node:path'
+import { createRequire } from 'node:module'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { scaffoldScene, validateScenes } from './validate.js'
 import type { ValidateManifest } from './validate.js'
+
+const require = createRequire(import.meta.url)
+/** 版本从 package.json 读，免得 source 里的硬编码跟发版脚本脱节 */
+const MCP_VERSION = (require('../package.json') as { version: string }).version
 
 interface ManifestField {
   name: string
@@ -21,18 +26,31 @@ interface ManifestProp {
   default: string
   description: string
   fields?: ManifestField[]
+  fieldCount?: number
+  fieldsTruncated?: boolean
+}
+
+interface ManifestEvent {
+  name: string
+  type: string
+  signature: string
+  description: string
+  fields?: ManifestField[]
+  fieldCount?: number
+  fieldsTruncated?: boolean
 }
 
 interface ManifestComponent {
   name: string
   rel: string
   props: ManifestProp[]
-  events: { name: string; type: string; signature: string; description: string; fields?: ManifestField[] }[]
+  events: ManifestEvent[]
   slots: { name: string; type: string; description: string }[]
   exposed: { name: string; type: string; description: string }[]
   types?: { name: string; kind: string; file: string; code: string }[]
   scenes: string[]
   uncoveredProps: string[]
+  undocumented: string[]
 }
 
 interface ManifestScene {
@@ -107,6 +125,16 @@ const locate = (root: string, rel: string, needle: string): string => {
     codeLines.find((item) => declaration.test(item.line)) ??
     codeLines.find((item) => word.test(item.line))
   return hit ? `${rel}:${hit.index + 1}` : rel
+}
+
+/**
+ * 只要行号：组件的所有 prop / event 都在同一个文件里（路径写在标题下那一行），
+ * 每行再带一遍绝对路径等于把同一段字符串复制几百次 —— 真实宿主上一个 500 行的响应有 4/5 是路径。
+ */
+const lineOf = (root: string, rel: string, needle: string): string => {
+  const located = locate(root, rel, needle)
+  const at = located.lastIndexOf(':')
+  return at >= rel.length ? `L${located.slice(at + 1)}` : ''
 }
 
 const USAGE = `rinova-playground-mcp —— 把契约清单暴露给 AI 编码工具（只读）
@@ -194,28 +222,54 @@ const loadManifest = (file: string, searchFrom: string): Manifest => {
   return JSON.parse(fs.readFileSync(file, 'utf8')) as Manifest
 }
 
+/**
+ * 单个工具响应里内联展开的字段上限。
+ *
+ * 超过就只给一行「共 N 个字段」+ `fields_of` 的取法：真实宿主里一个 prop 可能有几十上百个字段，
+ * 全量铺进一次响应就是几百 KB，模型读不动也记不住。
+ */
+const MAX_FIELDS_INLINE = 8
+/** Types 段最多展开几个类型的源码原文 */
+const MAX_TYPES_INLINE = 12
+
+const fieldLine = (field: ManifestField): string =>
+  `  · ${field.name}: ${field.type}${field.required ? ' (必填)' : ''}${field.description ? ` — ${field.description}` : ''}`
+
+const formatFields = (
+  propName: string,
+  expansion: { fields?: ManifestField[]; fieldCount?: number; fieldsTruncated?: boolean },
+  componentName: string
+): string[] => {
+  const fields = expansion.fields ?? []
+  if (!fields.length) return []
+  const total = expansion.fieldCount ?? fields.length
+  if (fields.length > MAX_FIELDS_INLINE) {
+    return [
+      `  · 共 ${total} 个字段${expansion.fieldsTruncated ? '（已按声明序截断）' : ''}，用 fields_of(component="${componentName}", prop="${propName}") 取前 20`,
+    ]
+  }
+  const lines = fields.map(fieldLine)
+  if (total > fields.length) lines.push(`  · …另有 ${total - fields.length} 个字段（已截断），用 fields_of 取`)
+  return lines
+}
+
 const formatComponent = (root: string, component: ManifestComponent, manifest: Manifest): string => {
-  const lines: string[] = [
-    `# ${component.name}`,
-    `源码：${locate(root, component.rel, component.name)}`,
-    '',
-    '## Props',
-  ]
+  const componentLine = lineOf(root, component.rel, component.name)
+  const source = componentLine ? `${component.rel}:${componentLine.slice(1)}` : component.rel
+  const anchor = (needle: string): string => {
+    const at = lineOf(root, component.rel, needle)
+    return at ? ` ← ${at}` : ''
+  }
+  const lines: string[] = [`# ${component.name}`, `源码：${source}（下面的 ← L<n> 指这个文件的行号）`, '', '## Props']
 
   if (!component.props.length) lines.push('- （无对外 props）')
   for (const prop of component.props) {
     const flags = [prop.required ? 'required' : '', prop.default ? `default=${prop.default}` : '']
       .filter(Boolean)
       .join(', ')
-    lines.push(
-      `- ${prop.name}: ${prop.type}${flags ? ` (${flags})` : ''}  ← ${locate(root, component.rel, prop.name)}`
-    )
+    lines.push(`- ${prop.name}: ${prop.type}${flags ? ` (${flags})` : ''}${anchor(prop.name)}`)
     if (prop.description) lines.push(`  ${prop.description}`)
-    for (const field of prop.fields ?? []) {
-      lines.push(
-        `  · ${field.name}: ${field.type}${field.required ? ' (必填)' : ''}${field.description ? ` — ${field.description}` : ''}`
-      )
-    }
+    lines.push(...formatFields(prop.name, prop, component.name))
   }
 
   if (component.events.length) {
@@ -223,9 +277,7 @@ const formatComponent = (root: string, component: ManifestComponent, manifest: M
     for (const event of component.events) {
       lines.push(`- ${event.name} ${event.type}${event.description ? ` — ${event.description}` : ''}`)
       if (event.signature) lines.push(`  ${event.signature}`)
-      for (const field of event.fields ?? []) {
-        lines.push(`  · ${field.name}: ${field.type}${field.description ? ` — ${field.description}` : ''}`)
-      }
+      lines.push(...formatFields(event.name, event, component.name))
     }
   }
   if (component.slots.length) {
@@ -243,8 +295,11 @@ const formatComponent = (root: string, component: ManifestComponent, manifest: M
 
   if (component.types?.length) {
     lines.push('', '## Types')
-    for (const item of component.types) {
+    component.types.slice(0, MAX_TYPES_INLINE).forEach((item) => {
       lines.push(`- ${item.name}（${item.kind}，${item.file}）`, '```ts', item.code, '```')
+    })
+    if (component.types.length > MAX_TYPES_INLINE) {
+      lines.push(`- …另有 ${component.types.length - MAX_TYPES_INLINE} 个类型，看页面「Types」页签`)
     }
   }
 
@@ -300,7 +355,7 @@ const main = async (): Promise<void> => {
     }
   }
 
-  const server = new McpServer({ name: 'rinova-playground', version: '0.7.1' })
+  const server = new McpServer({ name: 'rinova-playground', version: MCP_VERSION })
 
   server.registerTool(
     'capability_search',
@@ -352,6 +407,58 @@ const main = async (): Promise<void> => {
   )
 
   server.registerTool(
+    'fields_of',
+    {
+      title: '取对象字段',
+      description:
+        '按需取某个 prop / 事件参数展开后的字段（默认前 20 个）。capability_get 里字段超过 8 个时只给总数，细节用这个工具取',
+      inputSchema: {
+        component: z.string().min(1).describe('组件名，如 MyTable'),
+        prop: z.string().min(1).describe('prop 名或事件名，如 columns'),
+        limit: z.number().int().min(1).max(200).optional().describe('最多返回多少个字段，默认 20'),
+      },
+    },
+    ({ component, prop, limit }) => {
+      refresh()
+      const found = manifest.components.find(
+        (item) => item.name.toLowerCase() === component.toLowerCase() || item.rel.endsWith(component)
+      )
+      if (!found) {
+        return { content: [{ type: 'text', text: `没找到组件 "${component}"。` }], isError: true }
+      }
+      const expansion =
+        found.props.find((item) => item.name === prop) ?? found.events.find((item) => item.name === prop)
+      if (!expansion) {
+        const names = [...found.props.map((item) => item.name), ...found.events.map((item) => item.name)]
+        return {
+          content: [{ type: 'text', text: `${found.name} 没有 "${prop}"。可选：${names.join(', ') || '无'}` }],
+          isError: true,
+        }
+      }
+      const fields = expansion.fields ?? []
+      if (!fields.length) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `${found.name}.${prop} 没有可展开的字段：类型是 ${(expansion as ManifestProp).type ?? ''}，字段要么来自外部包（如 element-plus / csstype），要么不是对象类型。`,
+            },
+          ],
+        }
+      }
+      const size = Math.min(limit ?? 20, fields.length)
+      const total = expansion.fieldCount ?? fields.length
+      const lines = [
+        `# ${found.name}.${prop}：${total} 个字段${expansion.fieldsTruncated ? '（清单按声明序截断到 32 个）' : ''}`,
+        '',
+        ...fields.slice(0, size).map((field) => `- ${field.name}: ${field.type}${field.required ? ' (必填)' : ''}${field.description ? ` — ${field.description}` : ''}`),
+      ]
+      if (total > size) lines.push('', `（显示前 ${size} 个；调大 limit 最多 200）`)
+      return { content: [{ type: 'text', text: lines.join('\n') }] }
+    }
+  )
+
+  server.registerTool(
     'scenario_list',
     {
       title: '列出场景',
@@ -380,18 +487,60 @@ const main = async (): Promise<void> => {
     'coverage_report',
     {
       title: 'props 覆盖报告',
-      description: '列出没有场景覆盖的 props，作为补场景的待办',
-      inputSchema: {},
+      description:
+        '默认给按组件汇总的覆盖情况（哪个组件缺多少 prop 有场景）；detail=true 才逐个列出没有场景覆盖的 props',
+      inputSchema: {
+        detail: z.boolean().optional().describe('true 则逐条列出未覆盖的 props，默认只给汇总'),
+        limit: z.number().int().min(1).max(200).optional().describe('detail=true 时最多列多少条，默认 50'),
+      },
     },
-    () => {
+    ({ detail, limit }) => {
       refresh()
-      const rows = manifest.components.flatMap((component) =>
-        component.uncoveredProps.map((prop) => `- ${component.name}.${prop}  ← ${locate(project, component.rel, prop)}`)
-      )
       const total = manifest.components.reduce((sum, component) => sum + component.props.length, 0)
-      const uncovered = rows.length
+      const uncovered = manifest.components.reduce((sum, component) => sum + component.uncoveredProps.length, 0)
       const head = `覆盖 ${total - uncovered}/${total}｜清单生成时间 ${manifest.generatedAt}`
-      return { content: [{ type: 'text', text: rows.length ? `${head}\n\n${rows.join('\n')}` : `${head}\n\n全部 props 都有场景覆盖。` }] }
+      if (!uncovered) {
+        return { content: [{ type: 'text', text: `${head}\n\n全部 props 都有场景覆盖。` }] }
+      }
+      if (!detail) {
+        const rows = manifest.components
+          .filter((component) => component.uncoveredProps.length)
+          .map((component) => ({
+            text: `- ${component.name}: ${component.uncoveredProps.length}/${component.props.length} 个 prop 缺场景`,
+            count: component.uncoveredProps.length,
+          }))
+          .sort((a, b) => b.count - a.count)
+        const showsMissing = manifest.components.filter((component) => component.undocumented.length).length
+        const top = rows.slice(0, 20).map((row) => row.text)
+        if (rows.length > top.length) top.push(`- …另有 ${rows.length - top.length} 个组件有缺口`)
+        return {
+          content: [
+            {
+              type: 'text',
+              text: [
+                head,
+                '',
+                `缺场景的组件：${rows.length} 个；缺 JSDoc 的组件：${showsMissing} 个`,
+                '',
+                ...top,
+                '',
+                '要看具体是哪几个 prop：coverage_report(detail=true)；待办全文在 .playground/llms-todo.txt。',
+              ].join('\n'),
+            },
+          ],
+        }
+      }
+      const size = limit ?? 50
+      const rows = manifest.components.flatMap((component) =>
+        component.uncoveredProps.map((prop) => ({
+          name: `${component.name}.${prop}`,
+          rel: component.rel,
+          prop
+        }))
+      )
+      const shown = rows.slice(0, size).map((row) => `- ${row.name}  ← ${locate(project, row.rel, row.prop)}`)
+      if (rows.length > shown.length) shown.push(`- …另有 ${rows.length - shown.length} 条（调大 limit，或看 .playground/llms-todo.txt）`)
+      return { content: [{ type: 'text', text: `${head}\n\n${shown.join('\n')}` }] }
     }
   )
 

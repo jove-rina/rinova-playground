@@ -23,6 +23,24 @@ const clearManifestCache = (): void => {
   metaCache.clear()
 }
 
+/**
+ * 组件文件改动后，把最新文本推给 checker。
+ *
+ * 不推的话语言服务仍在用建 checker 时的旧快照：改了 props 后契约清单不更新，
+ * API 页要重启 dev 才变（踩过：加一个 prop 等 15s 仍是旧列表）。
+ * 只更新被改的那个文件，代价远低于清空整个 checker。
+ */
+export const syncComponentFile = (abs: string): boolean => {
+  const checker = checkerCache?.checker as { updateFile?: (file: string, text: string) => void } | undefined
+  if (!checker || typeof checker.updateFile !== 'function') return false
+  try {
+    checker.updateFile(abs, fs.readFileSync(abs, 'utf8'))
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** Vue 自带的透传 props，不属于组件自身契约 */
 const BUILTIN_PROPS = new Set([
   'key',
@@ -48,8 +66,14 @@ export interface ManifestProp {
   required: boolean
   default: string
   description: string
-  /** 对象 / 对象数组类型的字段展开（一层），如 `columns: Column[]` → Column 的字段 */
+  /** 对象 / 对象数组类型的字段展开（一层；只展开本项目声明的字段，最多 32 个），如 `columns: Column[]` → Column 的字段 */
   fields?: ManifestField[]
+  /** 截断前的字段总数（只在 `fields` 存在时给出，用于「共 N 个字段，省略 M」这类提示） */
+  fieldCount?: number
+  /** `fields` 是否被 32 个的上限截断 */
+  fieldsTruncated?: boolean
+  /** 字面量联合 / enum 的可选值，如 `mode: 'default' | 'table'` → ['default','table'] */
+  values?: string[]
 }
 
 export interface ManifestEvent {
@@ -59,8 +83,12 @@ export interface ManifestEvent {
   /** 完整签名，如 `(event: "focus", event: FocusEvent): void` */
   signature: string
   description: string
-  /** 某个对象参数展开后的字段（取第一个带属性的参数） */
+  /** 某个对象参数展开后的字段（取第一个带属性的参数；只展开本项目声明的字段，最多 32 个） */
   fields?: ManifestField[]
+  /** 截断前的字段总数 */
+  fieldCount?: number
+  /** `fields` 是否被 32 个的上限截断 */
+  fieldsTruncated?: boolean
 }
 
 export interface ManifestSlot {
@@ -79,7 +107,8 @@ export interface ManifestExposed {
 /** 组件契约里引用到的具名类型定义（源文件原文，含 JSDoc） */
 export interface ManifestType {
   name: string
-  kind: 'interface' | 'type'
+  /** interface / type alias / enum（字面量联合别名归到 type） */
+  kind: 'interface' | 'type' | 'enum'
   /** 声明所在文件，相对项目根 */
   file: string
   /** 声明原文，直接交给代码块高亮 */
@@ -228,18 +257,66 @@ const FLAG_UNION = 1048576 // ts.TypeFlags.Union
  */
 const DEBUG_FIELDS = Boolean(process.env.RINOVA_DEBUG_FIELDS)
 
-const readFields = (prop: unknown): ManifestField[] => {
+/** 单个 prop / 事件参数展开的字段上限；超出按声明序截断并标明真实数量 */
+const MAX_FIELDS = 32
+/** 字段说明字数上限：外部库的 JSDoc 常带整段文档，会把宿主 API 表淹掉 */
+const MAX_FIELD_DESCRIPTION = 160
+
+/** 字段展开结果：字段本身 + 截断前的真实数量 */
+interface FieldExpansion {
+  fields: ManifestField[]
+  total: number
+}
+
+const EMPTY_EXPANSION: FieldExpansion = { fields: [], total: 0 }
+
+/**
+ * 字段说明清洗：剥掉浏览器支持表格 / Baseline 段落（那是外部库的文档，不是宿主的 API 说明）并按字数截断。
+ * 导出的目的是让 verify 能直接对规则做单测。
+ */
+export const cleanFieldDescription = (text: string): string => {
+  if (!text) return ''
+  const kept = text
+    .split('\n')
+    .filter((line) => !/^\s*\|/.test(line))
+    .filter((line) => !/^(This feature is (not )?Baseline|Baseline \d{4})/i.test(line.trim()))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  return kept.length > MAX_FIELD_DESCRIPTION ? `${kept.slice(0, MAX_FIELD_DESCRIPTION).trimEnd()}…` : kept
+}
+
+/**
+ * 字段是不是本项目的声明。
+ *
+ * 第三方包（element-plus 的 TableProps → csstype 的 CSS.Properties 1348 个 CSS 字段）与 TS lib 里的成员，
+ * 文档属于那个库、不属于宿主的 API；全量展开会把一份清单撑到几 MB，而且对写场景的人没有用。
+ * 这类 prop 只保留类型名，要看细节去 Types 页签 / 直接看包的类型定义。
+ */
+const isOwnField = (symbol: Record<string, unknown>): boolean => {
+  const declarations = symbol.declarations as Array<Record<string, unknown>> | undefined
+  const declaration = (symbol.valueDeclaration ?? declarations?.[0]) as Record<string, unknown> | undefined
+  const getSourceFile = declaration?.getSourceFile as (() => { fileName: string }) | undefined
+  if (typeof getSourceFile !== 'function') return true
+  try {
+    return !isExternalDeclaration(getSourceFile.call(declaration).fileName)
+  } catch {
+    return true
+  }
+}
+
+const readFields = (prop: unknown): FieldExpansion => {
   try {
     if (DEBUG_FIELDS) console.warn('[fields] enter', (prop as { name?: string }).name)
     const getter = (prop as { getTypeObject?: () => unknown }).getTypeObject
     if (typeof getter !== 'function') {
       if (DEBUG_FIELDS) console.warn('[fields] no getTypeObject')
-      return []
+      return EMPTY_EXPANSION
     }
     const type = getter.call(prop) as Record<string, unknown> | undefined
     if (!type) {
       if (DEBUG_FIELDS) console.warn('[fields] no type')
-      return []
+      return EMPTY_EXPANSION
     }
     if (DEBUG_FIELDS) console.warn('[fields] type flags', Number(type.flags), 'keys', Object.keys(type).slice(0, 8).join(','))
     const ts = type.checker as Record<string, (...args: never[]) => unknown> & {
@@ -247,7 +324,7 @@ const readFields = (prop: unknown): ManifestField[] => {
     }
     if (!ts || typeof ts.getPropertiesOfType !== 'function') {
       if (DEBUG_FIELDS) console.warn('[fields] no checker', Object.keys(type))
-      return []
+      return EMPTY_EXPANSION
     }
 
     let target: Record<string, unknown> = type
@@ -256,7 +333,7 @@ const readFields = (prop: unknown): ManifestField[] => {
       const objectPart = parts.find((part) => (Number(part.flags) & FLAG_OBJECT) === FLAG_OBJECT)
       if (!objectPart) {
         if (DEBUG_FIELDS) console.warn('[fields] union without object', parts.map((part) => Number(part.flags)).join(','))
-        return []
+        return EMPTY_EXPANSION
       }
       target = objectPart
     }
@@ -265,11 +342,17 @@ const readFields = (prop: unknown): ManifestField[] => {
     if (args && args.length) target = args[0] as Record<string, unknown>
     if ((Number(target.flags) & FLAG_OBJECT) !== FLAG_OBJECT) {
       if (DEBUG_FIELDS) console.warn('[fields] target not object', Number(target.flags), ts.typeToString(target))
-      return []
+      return EMPTY_EXPANSION
     }
 
     const symbols = (ts.getPropertiesOfType as unknown as (value: unknown) => Array<Record<string, unknown>>)(target)
-    return symbols
+    const own = symbols.filter((symbol) => isOwnField(symbol))
+    if (!own.length) {
+      if (DEBUG_FIELDS) console.warn('[fields] 全部字段来自外部包，跳过', own.length, '/', symbols.length)
+      return EMPTY_EXPANSION
+    }
+    const fields = own
+      .slice(0, MAX_FIELDS)
       .map((symbol) => {
         const name = (symbol.getName as () => string)()
         if (name.startsWith('__')) return null
@@ -288,43 +371,56 @@ const readFields = (prop: unknown): ManifestField[] => {
           type: text,
           // 可选性以类型里的 undefined 为准：vue-component-meta 包了一层 symbol，flags 不可靠
           required: !/\|\s*undefined$/.test(text),
-          description,
+          description: cleanFieldDescription(description),
         }
       })
       .filter((item): item is ManifestField => item !== null)
+    return { fields, total: own.length }
   } catch (error) {
     if (DEBUG_FIELDS) console.warn('[fields] error', String(error))
-    return []
+    return EMPTY_EXPANSION
   }
 }
 
 /** 事件：从参数元组里找第一个对象参数，展开它的字段 */
-const readEventFields = (event: unknown): ManifestField[] => {
+const readEventFields = (event: unknown): FieldExpansion => {
   try {
     const getter = (event as { getTypeObject?: () => unknown }).getTypeObject
-    if (typeof getter !== 'function') return []
+    if (typeof getter !== 'function') return EMPTY_EXPANSION
     const tuple = getter.call(event) as Record<string, unknown> | undefined
-    if (!tuple) return []
+    if (!tuple) return EMPTY_EXPANSION
     const ts = tuple.checker as Record<string, (...args: never[]) => unknown> & {
       typeToString: (value: unknown) => string
       getPropertiesOfType: (value: unknown) => Array<Record<string, unknown>>
     }
-    if (!ts || typeof ts.getPropertiesOfType !== 'function') return []
+    if (!ts || typeof ts.getPropertiesOfType !== 'function') return EMPTY_EXPANSION
     const args = (tuple.typeArguments as unknown[] | undefined) ?? []
     for (const arg of args) {
       const type = arg as Record<string, unknown>
       if ((Number(type.flags) & FLAG_OBJECT) !== FLAG_OBJECT) continue
-      const fields = readFields({
+      const expansion = readFields({
         getTypeObject: () => type,
       })
-      if (fields.length) return fields
+      if (expansion.fields.length) return expansion
     }
-    return []
+    return EMPTY_EXPANSION
   } catch (error) {
     if (DEBUG_FIELDS) console.warn('[fields] event error', String(error))
-    return []
+    return EMPTY_EXPANSION
   }
 }
+
+/** 把字段展开结果拼成 prop / event 上的可选片段（有字段才出现这几个键） */
+const fieldSpread = (
+  expansion: FieldExpansion
+): { fields?: ManifestField[]; fieldCount?: number; fieldsTruncated?: boolean } =>
+  expansion.fields.length
+    ? {
+        fields: expansion.fields,
+        fieldCount: expansion.total,
+        ...(expansion.total > expansion.fields.length ? { fieldsTruncated: true } : {}),
+      }
+    : {}
 
 const normalizeType = (value: unknown): string => {
   if (Array.isArray(value)) return value.map(String).join(' | ')
@@ -412,6 +508,348 @@ const readTypeDeclaration = (type: unknown, root: string): ManifestType | null =
   }
 }
 
+
+/* ------------------------------------------------------------------ *
+ * 类型定义（AST）：声明处类型节点优先
+ *
+ * 背景：`readTypeDeclaration` 从「已解析的类型对象」回溯，只认 Object 类型。
+ * 于是 `type TaoFormMode = 'default' | 'table'` 这种字面量联合别名（union 里没有
+ * Object 成员）整体落空 —— Types 页签不出现、类型列也点不开。
+ *
+ * 这里顺着 vue-component-meta 生成的虚拟文件（路径同 .vue）读声明处的类型节点：
+ *   type __VLS_Props = TaoFormPropsType
+ *   type __VLS_Emit  = TaoFormEmitsType
+ *   type __VLS_Slots = ...
+ * 把本地 interface / type alias / enum 的声明原文收进 types，并把字面量联合 /
+ * enum 的成员值抽成 values。旧的类型对象回溯保留作 runtime props 的 fallback。
+ * ------------------------------------------------------------------ */
+
+/** 避免 d.ts 硬绑宿主 TS 版本：这里只用到极稳定的语法节点判断与 SymbolFlags */
+type TsApi = any
+
+const MAX_TYPE_DEPTH = 3
+const MAX_TYPES_PER_COMPONENT = 60
+const MAX_TYPE_CODE = 4000
+const MAX_VALUES = 30
+
+let tsCache: { root: string; ts: TsApi | null } | null = null
+
+/** 解析 typescript：先按插件自身解析，失败回落到宿主项目根 */
+const loadTypeScript = (root: string): TsApi | null => {
+  if (tsCache?.root === root) return tsCache.ts
+  let ts: TsApi | null = null
+  try {
+    ts = require('typescript') as TsApi
+  } catch {
+    ts = null
+  }
+  if (!ts) {
+    try {
+      ts = createRequire(path.join(root, 'package.json'))('typescript') as TsApi
+    } catch {
+      ts = null
+    }
+  }
+  tsCache = { root, ts }
+  return ts
+}
+
+interface AstContext {
+  ts: TsApi
+  checker: any
+  root: string
+}
+
+interface AstTypeResult {
+  types: ManifestType[]
+  /** prop 名 → 可选值（字面量联合 / enum 成员） */
+  propValues: Map<string, string[]>
+}
+
+const VIRTUAL_TYPE_NAMES = {
+  props: '__VLS_Props',
+  emit: '__VLS_Emit',
+  slots: '__VLS_Slots'
+} as const
+
+/** import 进来的是 Alias symbol，不展开只能拿到 ImportSpecifier */
+const resolveAliasSymbol = (ctx: AstContext, symbol: any): any => {
+  if (!symbol) return undefined
+  const { ts, checker } = ctx
+  return (symbol.flags & ts.SymbolFlags.Alias) === ts.SymbolFlags.Alias
+    ? checker.getAliasedSymbol(symbol)
+    : symbol
+}
+
+/** 取类型节点指向的符号；TypeReference 的符号挂在 typeName 上，不是节点本身 */
+const symbolOfTypeNode = (ctx: AstContext, node: any): any => {
+  if (!node) return undefined
+  const target = ctx.ts.isTypeReferenceNode(node) ? node.typeName : node
+  return resolveAliasSymbol(ctx, ctx.checker.getSymbolAtLocation(target))
+}
+
+/** 定位虚拟文件里 `type __VLS_Xxx = ...;` 的类型节点 */
+const findVirtualTypeNode = (ctx: AstContext, sourceFile: any, name: string): any => {
+  const { ts } = ctx
+  for (const statement of sourceFile.statements ?? []) {
+    if (
+      ts.isTypeAliasDeclaration(statement) &&
+      statement.name &&
+      statement.name.text === name
+    ) {
+      return statement.type
+    }
+  }
+  return null
+}
+
+/** 接口（含 extends 链）的成员：名字 → PropertySignature 节点 */
+const collectInterfaceMembers = (
+  ctx: AstContext,
+  symbol: any,
+  depth = 0,
+  out = new Map<string, any>()
+): Map<string, any> => {
+  if (!symbol || depth > MAX_TYPE_DEPTH) return out
+  const { ts, checker } = ctx
+  for (const declaration of symbol.declarations ?? []) {
+    if (ts.isInterfaceDeclaration(declaration) || ts.isTypeAliasDeclaration(declaration)) {
+      const members = declaration.members ?? declaration.type?.members ?? []
+      for (const member of members) {
+        const name = member.name?.getText?.() ?? member.name?.text
+        if (name && member.type && !out.has(name)) out.set(name, member)
+      }
+      for (const clause of declaration.heritageClauses ?? []) {
+        for (const type of clause.types ?? []) {
+          const base = resolveAliasSymbol(ctx, checker.getSymbolAtLocation(type.expression))
+          if (base) collectInterfaceMembers(ctx, base, depth + 1, out)
+        }
+      }
+    }
+  }
+  return out
+}
+
+/**
+ * 从类型节点直接取成员：`defineProps<{...}>()` 的类型是匿名 TypeLiteral，
+ * 没有符号可以解析（宿主里非常常见），必须从节点本身取。
+ */
+const collectMemberNodes = (ctx: AstContext, node: any, out = new Map<string, any>(), depth = 0): Map<string, any> => {
+  if (!node || depth > MAX_TYPE_DEPTH) return out
+  const { ts } = ctx
+  if (ts.isParenthesizedTypeNode(node)) return collectMemberNodes(ctx, node.type, out, depth + 1)
+  if (ts.isIntersectionTypeNode(node)) {
+    for (const part of node.types ?? []) collectMemberNodes(ctx, part, out, depth + 1)
+    return out
+  }
+  if (ts.isTypeLiteralNode(node)) {
+    for (const member of node.members ?? []) {
+      const name = member.name?.getText?.() ?? member.name?.text
+      if (name && !out.has(name)) out.set(name, member)
+    }
+    return out
+  }
+  if (ts.isTypeReferenceNode(node)) {
+    collectInterfaceMembers(ctx, symbolOfTypeNode(ctx, node), depth, out)
+  }
+  return out
+}
+
+/** 取类型节点里的调用签名（defineEmits 的 `type __VLS_Emit = {...}`） */
+const collectCallSignatures = (ctx: AstContext, node: any, out: any[] = [], depth = 0): any[] => {
+  if (!node || depth > MAX_TYPE_DEPTH) return out
+  const { ts } = ctx
+  if (ts.isParenthesizedTypeNode(node)) return collectCallSignatures(ctx, node.type, out, depth + 1)
+  if (ts.isIntersectionTypeNode(node)) {
+    for (const part of node.types ?? []) collectCallSignatures(ctx, part, out, depth + 1)
+    return out
+  }
+  if (ts.isTypeLiteralNode(node)) {
+    for (const member of node.members ?? []) {
+      if (ts.isCallSignatureDeclaration(member)) out.push(member)
+    }
+    return out
+  }
+  if (ts.isTypeReferenceNode(node)) {
+    for (const declaration of symbolOfTypeNode(ctx, node)?.declarations ?? []) {
+      for (const member of declaration.members ?? []) {
+        if (ts.isCallSignatureDeclaration(member)) out.push(member)
+      }
+    }
+  }
+  return out
+}
+
+/** 把一个具名符号的声明原文收进 types；只沿「别名 → 目标」「interface → extends」走，不展开成员 */
+const addNamedType = (ctx: AstContext, symbol: any, out: Map<string, ManifestType>, depth = 0): void => {
+  if (!symbol || depth > MAX_TYPE_DEPTH || out.size >= MAX_TYPES_PER_COMPONENT) return
+  const { ts } = ctx
+  for (const declaration of symbol.declarations ?? []) {
+    if (ts.isInterfaceDeclaration(declaration)) {
+      const name = symbol.getName()
+      if (out.has(name)) return
+      const file = declaration.getSourceFile()
+      if (isExternalDeclaration(file.fileName)) return
+      const code = file.text.slice(declaration.getFullStart(), declaration.getEnd()).trim()
+      if (!code) return
+      out.set(name, {
+        name,
+        kind: 'interface',
+        file: toPosix(path.relative(ctx.root, file.fileName)),
+        code: code.length > MAX_TYPE_CODE ? `${code.slice(0, MAX_TYPE_CODE)}\n// …（已截断）` : code
+      })
+      for (const clause of declaration.heritageClauses ?? []) {
+        for (const type of clause.types ?? []) {
+          addNamedType(ctx, resolveAliasSymbol(ctx, ctx.checker.getSymbolAtLocation(type.expression)), out, depth + 1)
+        }
+      }
+      return
+    }
+    if (ts.isTypeAliasDeclaration(declaration) || ts.isEnumDeclaration(declaration)) {
+      const name = symbol.getName()
+      if (out.has(name)) return
+      const file = declaration.getSourceFile()
+      if (isExternalDeclaration(file.fileName)) return
+      const code = file.text.slice(declaration.getFullStart(), declaration.getEnd()).trim()
+      if (!code) return
+      out.set(name, {
+        name,
+        kind: ts.isEnumDeclaration(declaration) ? 'enum' : 'type',
+        file: toPosix(path.relative(ctx.root, file.fileName)),
+        code: code.length > MAX_TYPE_CODE ? `${code.slice(0, MAX_TYPE_CODE)}\n// …（已截断）` : code
+      })
+      // 别名链：type A = B → 继续追 B（深度受限）
+      if (ts.isTypeAliasDeclaration(declaration)) walkTypeNode(ctx, declaration.type, out, depth + 1)
+      return
+    }
+  }
+}
+
+/** 遍历类型节点，收集其中引用的具名类型 */
+const walkTypeNode = (ctx: AstContext, node: any, out: Map<string, ManifestType>, depth = 0): void => {
+  if (!node || depth > MAX_TYPE_DEPTH || out.size >= MAX_TYPES_PER_COMPONENT) return
+  const { ts, checker } = ctx
+  if (ts.isParenthesizedTypeNode(node)) return walkTypeNode(ctx, node.type, out, depth)
+  if (ts.isArrayTypeNode(node)) return walkTypeNode(ctx, node.elementType, out, depth)
+  if (ts.isUnionTypeNode(node) || ts.isIntersectionTypeNode(node)) {
+    for (const item of node.types ?? []) walkTypeNode(ctx, item, out, depth)
+    return
+  }
+  if (ts.isTypeOperatorNode(node)) return walkTypeNode(ctx, node.type, out, depth)
+  if (ts.isTypeReferenceNode(node)) {
+    addNamedType(ctx, resolveAliasSymbol(ctx, checker.getSymbolAtLocation(node.typeName)), out)
+    for (const arg of node.typeArguments ?? []) walkTypeNode(ctx, arg, out, depth + 1)
+    return
+  }
+  if (ts.isFunctionTypeNode(node)) {
+    for (const param of node.parameters ?? []) walkTypeNode(ctx, param.type, out, depth)
+    walkTypeNode(ctx, node.type, out, depth)
+    return
+  }
+  if (ts.isTypeLiteralNode(node)) {
+    for (const member of node.members ?? []) walkTypeNode(ctx, member.type, out, depth + 1)
+  }
+}
+
+/** 字面量联合 / enum → 可选值列表；不是可枚举值就返回空数组 */
+const readValues = (ctx: AstContext, node: any, depth = 0): string[] => {
+  if (!node || depth > MAX_TYPE_DEPTH) return []
+  const { ts, checker } = ctx
+  if (ts.isParenthesizedTypeNode(node)) return readValues(ctx, node.type, depth)
+  if (ts.isLiteralTypeNode(node)) {
+    const literal = node.literal
+    if (ts.isStringLiteral(literal) || ts.isNumericLiteral(literal)) return [literal.text]
+    if (literal.kind === ts.SyntaxKind.TrueKeyword) return ['true']
+    if (literal.kind === ts.SyntaxKind.FalseKeyword) return ['false']
+    return []
+  }
+  if (ts.isUnionTypeNode(node)) {
+    const values: string[] = []
+    for (const item of node.types ?? []) {
+      if (item.kind === ts.SyntaxKind.UndefinedKeyword || item.kind === ts.SyntaxKind.NullKeyword) continue
+      values.push(...readValues(ctx, item, depth))
+    }
+    return [...new Set(values)].slice(0, MAX_VALUES)
+  }
+  if (ts.isTypeReferenceNode(node)) {
+    const symbol = resolveAliasSymbol(ctx, checker.getSymbolAtLocation(node.typeName))
+    for (const declaration of symbol?.declarations ?? []) {
+      if (ts.isEnumDeclaration(declaration)) {
+        return declaration.members.map((member: any) => member.name.getText()).slice(0, MAX_VALUES)
+      }
+      if (ts.isTypeAliasDeclaration(declaration)) return readValues(ctx, declaration.type, depth + 1)
+    }
+  }
+  return []
+}
+
+/**
+ * 从组件虚拟文件里抽类型定义与可选值。
+ * 拿不到 program / 虚拟文件（runtime props、旧版 vue-component-meta）时返回 null，
+ * 走原来的类型对象回溯。
+ */
+const readAstTypes = (input: {
+  root: string
+  abs: string
+  meta: { props: Array<{ name: string }>; events: Array<{ name: string }>; slots: Array<{ name: string }> }
+  checker: unknown
+}): AstTypeResult | null => {
+  const ts = loadTypeScript(input.root)
+  if (!ts) {
+    if (DEBUG_FIELDS) console.warn('[ast] typescript 解析失败')
+    return null
+  }
+  const getProgram = (input.checker as { getProgram?: () => unknown }).getProgram
+  if (typeof getProgram !== 'function') {
+    if (DEBUG_FIELDS) console.warn('[ast] checker 没有 getProgram')
+    return null
+  }
+  try {
+    const program = getProgram.call(input.checker) as { getSourceFile: (file: string) => any; getTypeChecker: () => any } | undefined
+    const sourceFile = program?.getSourceFile(input.abs)
+    if (!program || !sourceFile) {
+      if (DEBUG_FIELDS) console.warn('[ast] 虚拟文件缺失', input.abs, Boolean(program))
+      return null
+    }
+    const ctx: AstContext = { ts, checker: program.getTypeChecker(), root: input.root }
+    const types = new Map<string, ManifestType>()
+    const propValues = new Map<string, string[]>()
+
+    const propsType = findVirtualTypeNode(ctx, sourceFile, VIRTUAL_TYPE_NAMES.props)
+    const members = collectMemberNodes(ctx, propsType)
+
+    for (const prop of input.meta.props) {
+      const member = members.get(prop.name)
+      if (!member) continue
+      walkTypeNode(ctx, member.type, types)
+      const values = readValues(ctx, member.type)
+      if (values.length > 1) propValues.set(prop.name, values)
+    }
+
+    const emitType = findVirtualTypeNode(ctx, sourceFile, VIRTUAL_TYPE_NAMES.emit)
+    for (const signature of collectCallSignatures(ctx, emitType)) {
+      if (!signature.parameters?.length) continue
+      const names = readValues(ctx, signature.parameters[0].type)
+      if (!names.length) continue
+      if (!input.meta.events.some((event) => names.includes(event.name))) continue
+      for (const param of signature.parameters.slice(1)) walkTypeNode(ctx, param.type, types)
+    }
+
+    const slotsType = findVirtualTypeNode(ctx, sourceFile, VIRTUAL_TYPE_NAMES.slots)
+    const slotMembers = collectMemberNodes(ctx, slotsType)
+    for (const slot of input.meta.slots) {
+      const member = slotMembers.get(slot.name)
+      if (member?.type) walkTypeNode(ctx, member.type, types)
+    }
+
+    if (DEBUG_FIELDS) console.warn('[ast]', input.abs, 'types', types.size, 'values', propValues.size)
+    return { types: [...types.values()], propValues }
+  } catch (error) {
+    if (DEBUG_FIELDS) console.warn('[ast] error', String(error))
+    return null
+  }
+}
+
 export const buildManifest = (input: ManifestInput): Manifest => {
   const { createChecker } = require('vue-component-meta') as typeof import('vue-component-meta')
 
@@ -456,6 +894,13 @@ export const buildManifest = (input: ManifestInput): Manifest => {
 
   const components: ManifestComponent[] = findComponentFiles(input.root, input.patterns).map((rel) => {
     const meta = readMeta(rel)
+    // 声明处类型节点（AST）优先：字面量联合 / enum 别名只有这条路能拿到定义
+    const astTypes = readAstTypes({
+      root: input.root,
+      abs: path.join(input.root, rel),
+      meta,
+      checker
+    })
 
     /** 本组件契约引用到的具名类型，按名字去重 */
     const typeRefs = new Map<string, ManifestType>()
@@ -468,20 +913,22 @@ export const buildManifest = (input: ManifestInput): Manifest => {
       .filter((prop) => isOwnProp(prop.name))
       .map((prop) => {
         const type = normalizeType(prop.type)
-        const fields = readFields(prop)
+        const fieldExpansion = readFields(prop)
         collectType(typeObjectOf(prop))
+        const values = astTypes?.propValues.get(prop.name)
         return {
           name: prop.name,
           type,
           required: Boolean(prop.required),
           default: String(prop.default ?? ''),
           description: prop.description ?? '',
-          ...(fields.length ? { fields } : {}),
+          ...fieldSpread(fieldExpansion),
+          ...(values?.length ? { values } : {}),
         }
       })
 
     const events: ManifestEvent[] = meta.events.map((event) => {
-      const fields = readEventFields(event)
+      const fieldExpansion = readEventFields(event)
       const tuple = typeObjectOf(event) as Record<string, unknown> | undefined
       for (const arg of (tuple?.typeArguments as unknown[] | undefined) ?? []) collectType(arg)
       return {
@@ -489,7 +936,7 @@ export const buildManifest = (input: ManifestInput): Manifest => {
         type: normalizeType(event.type),
         signature: String(event.signature ?? ''),
         description: event.description ?? '',
-        ...(fields.length ? { fields } : {}),
+        ...fieldSpread(fieldExpansion),
       }
     })
 
@@ -536,6 +983,11 @@ export const buildManifest = (input: ManifestInput): Manifest => {
       ...exposed.filter((item) => !item.description).map((item) => `exposed:${item.name}`),
     ]
 
+    // AST 补进来的类型排在后面：保持原有「对象类型」顺序稳定（verify 有断言）
+    for (const item of astTypes?.types ?? []) {
+      if (!typeRefs.has(item.name)) typeRefs.set(item.name, item)
+    }
+
     return {
       name: meta.name || base,
       rel,
@@ -573,7 +1025,8 @@ const renderComponentBlock = (component: ManifestComponent): string[] => {
     const flags = [prop.required ? 'required' : '', prop.default ? `default=${prop.default}` : '']
       .filter(Boolean)
       .join(', ')
-    lines.push(`- prop ${prop.name}: ${prop.type}${flags ? ` (${flags})` : ''}`)
+    const values = prop.values?.length ? `（可选值：${prop.values.join(' / ')}）` : ''
+    lines.push(`- prop ${prop.name}: ${prop.type}${flags ? ` (${flags})` : ''}${values}`)
     if (prop.description) lines.push(`  ${prop.description}`)
   }
   if (component.events.length) {
@@ -805,27 +1258,53 @@ const renderPageSection = (env: ManifestEnv | undefined, manifest: Manifest): st
   return lines
 }
 
+const llmsHeader = (manifest: Manifest, suffix: string): string[] => [
+  `# ${manifest.env?.title || 'rinova-playground'} · ${suffix}（rinova-playground 自动生成）`,
+  '',
+]
+
+const kbOf = (text: string): string => `${Math.max(1, Math.round(text.length / 1024))}KB`
+
+/**
+ * 手册只留「怎么写场景 + 去哪查」。
+ *
+ * 组件契约（往往是几百 KB）与覆盖待办各放一个文件：AI 读手册只要几 KB，
+ * 需要某个组件的契约时走 MCP（`capability_get`）而不是整份文件。
+ */
 export const renderLlmsTxt = (manifest: Manifest): string => {
+  const componentsTxt = renderLlmsComponents(manifest)
+  const todoTxt = renderLlmsTodo(manifest)
   const lines: string[] = [
-    `# ${manifest.env?.title || 'rinova-playground'} · 演示环境说明（rinova-playground 自动生成）`,
-    '',
+    ...llmsHeader(manifest, '演示环境说明'),
     '> 由 `@rinova/playground-vite` 在 dev / build 时生成，随源码自动更新。要加一个演示，照 §3 的骨架写文件即可，不需要注册、不需要改配置。',
-    '> 查契约用 `@rinova/playground-mcp` 的 MCP 工具（`capability_search` / `capability_get` / `env_get` / `scene_scaffold` / `scene_validate` / `scenario_list` / `coverage_report`）。',
+    '> 查契约用 `@rinova/playground-mcp` 的 MCP 工具（`capability_search` / `capability_get` / `fields_of` / `env_get` / `scene_scaffold` / `scene_validate` / `scenario_list` / `coverage_report`）—— 不要整份读契约文件。',
     '',
     ...renderEnvSection(manifest.env, manifest),
     ...renderAuthoringSection(),
     ...renderPageSection(manifest.env, manifest),
-    '## 5. 组件契约',
+    '## 5. 契约与待办（另两个文件）',
+    '',
+    `- 组件契约：\`llms-components.txt\`（${manifest.components.length} 个组件，${kbOf(componentsTxt)}）—— 单个组件的 props / events / slots，优先用 MCP 的 \`capability_get\` 按需取。`,
+    `- 类型与字段：对象 prop 只展开本项目声明的字段（最多 32 个），外部包的字段只给类型名；说明里的浏览器支持表格已剥掉。`,
+    `- 覆盖待办：\`llms-todo.txt\`（${kbOf(todoTxt)}）—— 没有场景覆盖的 props、没有 JSDoc 的 API。`,
     '',
   ]
+  return `${lines.join('\n').trim()}\n`
+}
 
+/** 组件 / 模块契约全文（大文件，给 grep 与人工查阅，不要整份喂给模型） */
+export const renderLlmsComponents = (manifest: Manifest): string => {
+  const lines: string[] = [...llmsHeader(manifest, '组件契约'), '## 1. 组件契约', '']
   for (const component of manifest.components) lines.push(...renderComponentBlock(component))
-
-  lines.push('## 6. 模块契约（函数 / hooks / 常量）', '')
+  lines.push('## 2. 模块契约（函数 / hooks / 常量）', '')
   if (!manifest.modules.length) lines.push('没有配置 `config.modules`。', '')
   for (const module of manifest.modules) lines.push(...renderModuleBlock(module))
+  return `${lines.join('\n').trim()}\n`
+}
 
-  lines.push('## 7. 待办：覆盖与说明', '')
+/** 覆盖与说明的待办清单（单独成文，避免把手册撑到几百 KB） */
+export const renderLlmsTodo = (manifest: Manifest): string => {
+  const lines: string[] = [...llmsHeader(manifest, '覆盖与待办'), '## 1. 待办：覆盖与说明', '']
   const uncovered = manifest.components.flatMap((component) =>
     component.uncoveredProps.map((prop) => `- ${component.name}.${prop}（没有场景用到）`)
   )
@@ -842,7 +1321,6 @@ export const renderLlmsTxt = (manifest: Manifest): string => {
     if (moduleUncovered.length) lines.push('### 没有场景覆盖的模块导出', '', ...moduleUncovered, '')
     if (undocumented.length) lines.push('### 没有 JSDoc 的 API', '', ...undocumented, '')
   }
-
   return `${lines.join('\n').trim()}\n`
 }
 
@@ -887,8 +1365,11 @@ export const renderCoverage = (manifest: Manifest): string => {
 export const writeManifest = (outDir: string, manifest: Manifest): string[] => {
   fs.mkdirSync(outDir, { recursive: true })
   const targets = [
-    { file: path.join(outDir, 'manifest.json'), content: `${JSON.stringify(manifest, null, 2)}\n` },
+    // 紧凑 JSON：缩进版在真实宿主上会变成十几万行，谁要读用 `jq .` / `jq '.[]'`
+    { file: path.join(outDir, 'manifest.json'), content: `${JSON.stringify(manifest)}\n` },
     { file: path.join(outDir, 'llms.txt'), content: renderLlmsTxt(manifest) },
+    { file: path.join(outDir, 'llms-components.txt'), content: renderLlmsComponents(manifest) },
+    { file: path.join(outDir, 'llms-todo.txt'), content: renderLlmsTodo(manifest) },
     { file: path.join(outDir, 'coverage.md'), content: renderCoverage(manifest) },
   ]
 

@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createJiti } from 'jiti'
 import { parse as parseSfc } from '@vue/compiler-sfc'
-import { buildManifest, writeManifest } from './manifest.js'
+import { buildManifest, syncComponentFile, writeManifest } from './manifest.js'
 import type { ManifestEnv, ManifestPage } from './manifest.js'
 import { buildModules } from './module-api.js'
 import { resolvePluginSpecifier } from './plugin-spec.js'
@@ -836,7 +836,7 @@ ${pageCode}
       const source = path.join(root, '.playground')
       const target = path.resolve(root, outDir)
       if (!fs.existsSync(source)) return
-      for (const name of ['manifest.json', 'llms.txt', 'coverage.md']) {
+      for (const name of ['manifest.json', 'llms.txt', 'llms-components.txt', 'llms-todo.txt', 'coverage.md']) {
         const from = path.join(source, name)
         if (fs.existsSync(from)) fs.copyFileSync(from, path.join(target, name))
       }
@@ -903,6 +903,8 @@ ${pageCode}
         const hit = [...componentRoots].some((dir) => file.startsWith(dir))
         if (process.env.RINOVA_DEBUG_WATCH) console.log('[rp-debug]   vue=', true, 'hit=', hit)
         if (!hit) return
+        // 先把最新文本推给 checker，否则语言服务还在用旧快照（改 props 后清单不更新）
+        syncComponentFile(path.resolve(file))
         scheduleManifest()
       }
 
